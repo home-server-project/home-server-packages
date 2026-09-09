@@ -18,3 +18,11 @@ Upstream: `https://github.com/deviationist/cockpit-upside`
 Declared license: `LGPL-2.1-or-later`.
 
 The RPM build must include the upstream `LICENSE` file and the generated JavaScript legal notice (`dist/index.js.LEGAL.txt`). The corresponding source used to build every published UPSide RPM must be retained with the published artifact.
+
+## Superfile
+
+Upstream: `https://github.com/yorukot/superfile`
+
+Declared license: `MIT`.
+
+The RPM build must include the upstream `LICENSE` file and `NOTICE.md`. The notice file is maintained upstream for bundled Go dependency notices and must be preserved with the binary package and published artifact. The exact upstream source used for each published Superfile RPM is retained for provenance.
