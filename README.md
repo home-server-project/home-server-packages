@@ -1,20 +1,75 @@
 # Home Server Packages
 
-Third-party package build and validation repository for the Home Server Project.
+Central third-party package build, validation, and publication repository for the Home Server Project.
 
 This repository builds software that is not consumed directly from the Fedora or AlmaLinux repositories but is required by Home Server Project images. Each package keeps its upstream source, license, build, test, and publication handling isolated from the operating-system image repositories.
 
-## Current status
+## Packages
 
-Implemented package pipelines:
+Implemented and published package pipelines:
 
 - UPSide (`deviationist/cockpit-upside`)
 - Superfile (`yorukot/superfile`)
 - VirtUI Manager (`aginies/virtui-manager`)
 
-Planned later:
+Each package keeps its own independent pipeline:
 
-- shared orchestration/validation workflow after the individual package pipelines are proven
+```text
+upstream release
+    ↓
+exact source provenance
+    ↓
+build + upstream/package tests
+    ↓
+Fedora / Enterprise Linux validation
+    ↓
+immutable GHCR artifact
+    ↓
+:stable
+```
+
+## Stable package set
+
+The published stable package set is also validated together on:
+
+- Fedora 44
+- AlmaLinux 10 + EPEL
+
+The shared validator does not rebuild packages. It pulls the exact published `:stable` artifacts, verifies their checksums and metadata, installs the package set together, and runs functional checks.
+
+The scheduled validation runs every Friday at 22:45 UTC, before the weekly Gina and Rose image builds.
+
+Current stable artifact channels:
+
+```text
+ghcr.io/home-server-project/cockpit-upside:stable
+ghcr.io/home-server-project/superfile:stable
+ghcr.io/home-server-project/virtui-manager:stable
+```
+
+Each package also publishes an immutable versioned tag.
+
+## Automation
+
+Upstream updates are automatic.
+
+Exact upstream versions and commits, and private dependency locks where required, are maintained in this repository. A package update must build and pass its required validation before it is promoted to the stable channel.
+
+The shared stable-package validation then checks the already-published package set against the current Fedora and AlmaLinux environments before the scheduled operating-system image builds.
+
+## Consumers
+
+Gina and Rose are intended to consume these verified packages instead of rebuilding the same third-party software from source inside their own image builds.
+
+This keeps responsibilities separate:
+
+```text
+home-server-packages
+    = software factory
+
+Gina / Rose
+    = operating-system factory
+```
 
 ## Policy
 
