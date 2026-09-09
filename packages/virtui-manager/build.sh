@@ -115,12 +115,18 @@ LICENSE_MANIFEST="${PYTHON_DIR}/python-licenses.tsv" \
 TEXTUAL_VERSION="${TEXTUAL_VERSION}" \
 python3 - <<'PY'
 import os
+import re
 import tomllib
 from pathlib import Path
 
 lock_path = Path(os.environ["PYTHON_LOCK"])
 manifest_path = Path(os.environ["LICENSE_MANIFEST"])
 textual_version = os.environ["TEXTUAL_VERSION"]
+
+
+def normalize_name(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
 
 with lock_path.open("rb") as fh:
     lock = tomllib.load(fh)
@@ -131,14 +137,14 @@ for raw in manifest_path.read_text().splitlines():
     if not raw or raw.startswith("#"):
         continue
     name, spdx = raw.split("\t", 1)
-    expected[name.lower()] = spdx
+    expected[normalize_name(name)] = spdx
 
 registry_packages = {}
 for package in lock.get("package", []):
     source = package.get("source", {})
     if "registry" not in source:
         continue
-    name = package["name"].lower()
+    name = normalize_name(package["name"])
     registry_packages[name] = package["version"]
     wheels = package.get("wheels", [])
     if not wheels:
@@ -228,6 +234,7 @@ LICENSE_DEST="${PAYLOAD_DIR}/usr/share/licenses/virtui-manager/python" \
 python3 - <<'PY'
 import importlib.metadata
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -235,16 +242,21 @@ private = Path(os.environ["PRIVATE_DIR"])
 dest_root = Path(os.environ["LICENSE_DEST"])
 manifest = Path(os.environ["LICENSE_MANIFEST"])
 
+
+def normalize_name(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 expected = {}
 for raw in manifest.read_text().splitlines():
     raw = raw.strip()
     if not raw or raw.startswith("#"):
         continue
     name, spdx = raw.split("\t", 1)
-    expected[name.lower()] = spdx
+    expected[normalize_name(name)] = spdx
 
 dists = {
-    dist.metadata["Name"].lower(): dist
+    normalize_name(dist.metadata["Name"]): dist
     for dist in importlib.metadata.distributions(path=[str(private)])
     if dist.metadata.get("Name")
 }
