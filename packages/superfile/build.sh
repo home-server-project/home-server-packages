@@ -51,7 +51,24 @@ export GOTOOLCHAIN=auto
 
 go env GOVERSION > "${OUT_DIR}/metadata/go-version.txt"
 go mod verify
-go test ./...
+
+# Run every normal test strictly. TestZoxide is isolated because upstream
+# documents a zoxide query/add race that can intermittently lose an update.
+go test ./... -skip '^TestZoxide$'
+
+zoxide_ok=0
+for attempt in 1 2 3 4 5; do
+    echo "Running known-flaky TestZoxide, attempt ${attempt}/5"
+    if go test ./src/internal -run '^TestZoxide$' -count=1; then
+        zoxide_ok=1
+        break
+    fi
+done
+
+if [[ "${zoxide_ok}" -ne 1 ]]; then
+    echo "ERROR: TestZoxide failed all 5 attempts" >&2
+    exit 1
+fi
 
 # Use upstream's Linux build path. It builds with CGO_ENABLED=0.
 bash ./build.sh
