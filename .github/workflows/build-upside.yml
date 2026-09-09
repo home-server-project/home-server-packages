@@ -1,0 +1,184 @@
+---
+name: Build UPSide packages
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/cockpit-upside/**'
+      - '.github/workflows/build-upside.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/cockpit-upside/**'
+      - '.github/workflows/build-upside.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upside-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build UPSide - ${{ matrix.display_name }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44
+            display_name: Fedora 44
+            container: registry.fedoraproject.org/fedora:44
+            artifact_suffix: fc44
+            install_packages: >-
+              git make nodejs npm rpm-build gettext libappstream-glib
+              nodejs-esbuild xz gcc gcc-c++ python3
+
+          - id: el10
+            display_name: AlmaLinux 10
+            container: almalinux:10
+            artifact_suffix: el10
+            install_packages: >-
+              git make nodejs npm rpm-build gettext libappstream-glib
+              xz gcc gcc-c++ python3
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y ${{ matrix.install_packages }}
+          dnf clean all
+
+      - name: Checkout package repository
+        uses: actions/checkout@v4
+
+      - name: Build upstream RPM
+        shell: bash
+        run: |
+          bash packages/cockpit-upside/build.sh
+
+      - name: Test RPM installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y cockpit-bridge ./out/cockpit-upside/rpms/*.rpm
+
+          rpm -q cockpit-upside
+          test -f /usr/share/cockpit/upside/manifest.json
+          test -f /usr/share/licenses/cockpit-upside/LICENSE
+          test -f /usr/share/licenses/cockpit-upside/index.js.LEGAL.txt
+
+          rpm -V cockpit-upside
+
+      - name: Add target metadata
+        shell: bash
+        run: |
+          cat >> out/cockpit-upside/metadata/package.env <<EOF
+          TARGET_ID=${{ matrix.id }}
+          TARGET_NAME=${{ matrix.display_name }}
+          ARTIFACT_SUFFIX=${{ matrix.artifact_suffix }}
+          EOF
+
+          rpm --eval '%{?fedora}' > out/cockpit-upside/metadata/rpm-fedora-macro.txt
+          rpm --eval '%{?rhel}' > out/cockpit-upside/metadata/rpm-rhel-macro.txt
+          cat /etc/os-release > out/cockpit-upside/metadata/build-os-release.txt
+
+      - name: Upload validated package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cockpit-upside-${{ matrix.id }}
+          path: out/cockpit-upside/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified UPSide artifacts
+    needs:
+      - build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44
+            stable_tag: fedora44-stable
+            artifact_suffix: fc44
+          - id: el10
+            stable_tag: el10-stable
+            artifact_suffix: el10
+
+    steps:
+      - name: Download validated package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cockpit-upside-${{ matrix.id }}
+          path: package
+
+      - name: Read package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source package/metadata/package.env
+
+          echo "UPSIDE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "UPSIDE_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cockpit-upside" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF
+          FROM scratch
+          LABEL org.opencontainers.image.title="cockpit-upside package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project UPSide RPM, source, licenses, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${UPSIDE_VERSION}" \
+                io.home-server-project.package="cockpit-upside" \
+                io.home-server-project.upstream-commit="${UPSIDE_COMMIT}" \
+                io.home-server-project.target="${{ matrix.id }}"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF
+
+          docker build \
+            --file package/Containerfile \
+            --tag "${PACKAGE_IMAGE}:${UPSIDE_VERSION}-${{ matrix.artifact_suffix }}" \
+            --tag "${PACKAGE_IMAGE}:${{ matrix.stable_tag }}" \
+            package
+
+      - name: Publish immutable and stable tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${UPSIDE_VERSION}-${{ matrix.artifact_suffix }}"
+          docker push "${PACKAGE_IMAGE}:${{ matrix.stable_tag }}"
