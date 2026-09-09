@@ -7,6 +7,12 @@
 
   "rebaseWhen": "never",
 
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "automergeType": "pr",
+  },
+
   "customManagers": [
     {
       "customType": "regex",
@@ -35,6 +41,20 @@
       "extractVersionTemplate": "^v?(?<version>.*)$",
       "autoReplaceStringTemplate": "SUPERFILE_VERSION={{{newValue}}}\\nSUPERFILE_COMMIT={{{newDigest}}}",
     },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^packages\\/virtui-manager\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "VIRTUI_MANAGER_VERSION=(?<currentValue>\\S+)\\s+VIRTUI_MANAGER_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "aginies/virtui-manager",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "autoReplaceStringTemplate": "VIRTUI_MANAGER_VERSION={{{newValue}}}\\nVIRTUI_MANAGER_COMMIT={{{newDigest}}}",
+    },
   ],
 
   "packageRules": [
@@ -47,9 +67,20 @@
       "automergeType": "pr",
     },
     {
+      "matchManagers": [
+        "pep621",
+      ],
+      "matchDepTypes": [
+        "requires-python",
+      ],
+      "enabled": false,
+    },
+    {
       "matchPackageNames": [
         "deviationist/cockpit-upside",
         "yorukot/superfile",
+        "aginies/virtui-manager",
+        "textual",
       ],
       "automerge": true,
       "automergeType": "pr",
