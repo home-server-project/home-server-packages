@@ -106,6 +106,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
+              echo "ERROR: AlmaLinux CRB repository is not enabled." >&2
+              exit 1
+            fi
+
+            dnf install -y epel-release
+          fi
+
           dnf install -y rpm file
           dnf clean all
 
