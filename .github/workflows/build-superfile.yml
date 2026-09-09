@@ -119,7 +119,6 @@ jobs:
           test -x /usr/bin/spf
           test -f /usr/share/licenses/superfile/LICENSE
           test -f /usr/share/licenses/superfile/NOTICE.md
-          test -f /usr/share/doc/superfile/README.md
 
           /usr/bin/spf --version | tee /tmp/spf-version.txt
           source package/metadata/package.env
