@@ -1,0 +1,218 @@
+---
+name: Build Superfile package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/superfile/**'
+      - '.github/workflows/build-superfile.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/superfile/**'
+      - '.github/workflows/build-superfile.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: superfile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Superfile RPM
+    runs-on: ubuntu-24.04
+    container:
+      image: registry.fedoraproject.org/fedora:44
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y \
+            git \
+            golang \
+            rpm-build \
+            tar \
+            gzip \
+            binutils \
+            zoxide \
+            perl-Image-ExifTool
+          dnf clean all
+
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Build and test Superfile RPM
+        shell: bash
+        run: |
+          bash packages/superfile/build.sh
+
+      - name: Upload Superfile RPM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: superfile-x86_64
+          path: out/superfile/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate Superfile - ${{ matrix.display_name }}
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44
+            display_name: Fedora 44
+            container: registry.fedoraproject.org/fedora:44
+          - id: el10
+            display_name: AlmaLinux 10
+            container: almalinux:10
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Install validation tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y rpm binutils
+          dnf clean all
+
+      - name: Download exact Superfile RPM artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: superfile-x86_64
+          path: package
+
+      - name: Verify and install exact RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          (
+            cd package
+            cat metadata/rpm-sha256.txt
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+          RPM_FILE="$(find package/rpms -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
+          test -n "${RPM_FILE}"
+
+          dnf install -y "${RPM_FILE}"
+
+          rpm -q superfile
+          test -x /usr/bin/spf
+          test -f /usr/share/licenses/superfile/LICENSE
+          test -f /usr/share/licenses/superfile/NOTICE.md
+          test -f /usr/share/doc/superfile/README.md
+
+          /usr/bin/spf --version | tee /tmp/spf-version.txt
+          source package/metadata/package.env
+          grep -Fq "v${VERSION}" /tmp/spf-version.txt
+          /usr/bin/spf --help >/dev/null
+
+          if readelf -l /usr/bin/spf | grep -q 'Requesting program interpreter'; then
+            echo "ERROR: installed Superfile binary unexpectedly requires a dynamic ELF interpreter" >&2
+            exit 1
+          fi
+
+          rpm -V superfile
+
+          mkdir -p "package/validation/${{ matrix.id }}"
+          cat /etc/os-release > "package/validation/${{ matrix.id }}/os-release.txt"
+          rpm -q superfile > "package/validation/${{ matrix.id }}/superfile.txt"
+          sha256sum "${RPM_FILE}" > "package/validation/${{ matrix.id }}/rpm-sha256.txt"
+          cp /tmp/spf-version.txt "package/validation/${{ matrix.id }}/spf-version.txt"
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: superfile-validation-${{ matrix.id }}
+          path: package/validation/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified Superfile artifact
+    needs:
+      - build
+      - validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download validated package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: superfile-x86_64
+          path: package
+
+      - name: Read package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source package/metadata/package.env
+
+          echo "SUPERFILE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "SUPERFILE_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/superfile" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF
+          FROM scratch
+          LABEL org.opencontainers.image.title="superfile package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project Superfile RPM, source, licenses, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${SUPERFILE_VERSION}" \
+                io.home-server-project.package="superfile" \
+                io.home-server-project.upstream-commit="${SUPERFILE_COMMIT}" \
+                io.home-server-project.channel="universal-x86_64"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF
+
+          docker build \
+            --file package/Containerfile \
+            --tag "${PACKAGE_IMAGE}:${SUPERFILE_VERSION}-1.hsp" \
+            --tag "${PACKAGE_IMAGE}:stable" \
+            package
+
+      - name: Publish immutable and stable tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${SUPERFILE_VERSION}-1.hsp"
+          docker push "${PACKAGE_IMAGE}:stable"
