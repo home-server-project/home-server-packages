@@ -29,10 +29,17 @@ git checkout --detach "${UPSIDE_COMMIT}"
 make rpm
 
 find . -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -exec cp -v {} "${OUT_DIR}/rpms/" \;
-
 test -n "$(find "${OUT_DIR}/rpms" -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -print -quit)"
 
-# Preserve the exact source used for this binary artifact.
+# Retain the exact upstream-generated source inputs used by rpmbuild. These
+# include the source/dist archive and, when upstream creates it, the locked npm
+# module cache used for Fedora bundle rebuilding.
+find . -maxdepth 1 -type f \
+    \( -name 'cockpit-upside-*.tar.xz' -o -name 'cockpit-upside.spec' \) \
+    -exec cp -v {} "${OUT_DIR}/source/" \;
+
+# Also retain a plain archive of the exact pinned upstream commit. This gives a
+# simple source snapshot independent of generated build artifacts.
 git archive --format=tar.gz --prefix="cockpit-upside-${UPSIDE_VERSION}/" \
     -o "${OUT_DIR}/source/cockpit-upside-${UPSIDE_VERSION}-${UPSIDE_COMMIT}.tar.gz" \
     "${UPSIDE_COMMIT}"
@@ -61,5 +68,6 @@ grep -q '/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/index.js.LEGAL.txt$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: LGPL-2.1-or-later$' "${OUT_DIR}/metadata/rpm-info.txt"
 grep -q 'cockpit-bridge' "${OUT_DIR}/metadata/rpm-requires.txt"
+test -n "$(find "${OUT_DIR}/source" -maxdepth 1 -type f -name 'cockpit-upside-*.tar.xz' -print -quit)"
 
 printf 'Built and validated cockpit-upside %s from %s\n' "${UPSIDE_VERSION}" "${UPSIDE_COMMIT}"
