@@ -85,13 +85,18 @@ UPSTREAM=${UPSIDE_UPSTREAM}
 PACKAGE_CHANNEL=universal
 EOF
 
-sha256sum "${OUT_DIR}"/rpms/* "${OUT_DIR}"/source/* "${OUT_DIR}"/licenses/* \
-    > "${OUT_DIR}/metadata/SHA256SUMS"
+(
+    cd "${OUT_DIR}"
+    sha256sum rpms/* source/* licenses/* > metadata/SHA256SUMS
+)
 
 rpm -qpl "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-files.txt"
 rpm -qpR "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-requires.txt"
 rpm -qpi "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-info.txt"
-sha256sum "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-sha256.txt"
+(
+    cd "${OUT_DIR}"
+    sha256sum rpms/*.rpm > metadata/rpm-sha256.txt
+)
 
 # Package and license/compliance gates.
 grep -q '/usr/share/cockpit/upside/manifest.json$' "${OUT_DIR}/metadata/rpm-files.txt"
