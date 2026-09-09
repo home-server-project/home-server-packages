@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build neutral UPSide RPM
+    name: Build UPSide RPM
     runs-on: ubuntu-24.04
     container:
       image: registry.fedoraproject.org/fedora:44
