@@ -1,0 +1,78 @@
+diff --git a/src/internal/file_operations.go b/src/internal/file_operations.go
+--- a/src/internal/file_operations.go
++++ b/src/internal/file_operations.go
+@@ -12,7 +12,7 @@ import (
+ 	"github.com/yorukot/superfile/src/internal/ui/processbar"
+ 	"github.com/yorukot/superfile/src/pkg/utils"
+ 
+-	trash_win "github.com/hymkor/trash-go"
++	trash_lib "github.com/hymkor/trash-go"
+ 	"github.com/rkoesters/xdg/trash"
+ 
+ 	variable "github.com/yorukot/superfile/src/config"
+@@ -150,8 +150,8 @@ func moveToTrash(src string) error {
+ 	switch runtime.GOOS {
+ 	case utils.OsDarwin:
+ 		err = moveElement(src, filepath.Join(variable.DarwinTrashDirectory, filepath.Base(src)))
+-	case utils.OsWindows:
+-		err = trash_win.Throw(src)
++	case utils.OsWindows, utils.OsLinux:
++		err = trash_lib.Throw(src)
+ 	default:
+ 		// TODO: We should consider moving away from this package. Its not well written.
+ 		// It uses package globals, It doesn't initializes trash directory, and we have to do it
+diff --git a/src/internal/model_file_operations_test.go b/src/internal/model_file_operations_test.go
+--- a/src/internal/model_file_operations_test.go
++++ b/src/internal/model_file_operations_test.go
+@@ -5,10 +5,10 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 	"runtime"
++	"strings"
+ 	"testing"
+ 
+ 	tea "charm.land/bubbletea/v2"
+-	"github.com/rkoesters/xdg/trash"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ 
+@@ -198,8 +198,28 @@ func isTrashed(fileAbsPath string) bool {
+ 		_, err := os.Stat(filepath.Join(variable.DarwinTrashDirectory, fileName))
+ 		return err == nil
+ 	case utils.OsLinux:
+-		_, err := trash.Stat(fileAbsPath)
+-		return err == nil
++		entries, err := os.ReadDir(variable.LinuxTrashDirectoryInfo)
++		if err != nil {
++			return false
++		}
++
++		for _, entry := range entries {
++			if entry.IsDir() {
++				continue
++			}
++
++			data, err := os.ReadFile(filepath.Join(variable.LinuxTrashDirectoryInfo, entry.Name()))
++			if err != nil {
++				continue
++			}
++
++			for _, line := range strings.Split(string(data), "\n") {
++				if line == "Path="+fileAbsPath {
++					return true
++				}
++			}
++		}
++		return false
+ 	default:
+ 		return false
+ 	}
+@@ -265,7 +285,7 @@ func TestFileDelete(t *testing.T) {
+ 			// Window's trash is not flexible enough for the check.
+ 			// Sorry windows
+ 			if runtime.GOOS == utils.OsDarwin || runtime.GOOS == utils.OsLinux {
+-				assert.Equal(t, tt.permanentDelete, !isTrashed(filepath.Base(tt.filePath)),
++				assert.Equal(t, tt.permanentDelete, !isTrashed(tt.filePath),
+ 					"Existence in trash status should be expected only of not permanently deleted")
+ 			}
+ 		})
