@@ -1,0 +1,11 @@
+# package	SPDX
+linkify-it-py	MIT
+markdown-it-py	MIT
+mdit-py-plugins	MIT
+mdurl	MIT
+platformdirs	MIT
+pygments	BSD-2-Clause
+rich	MIT
+textual	MIT
+typing-extensions	PSF-2.0
+uc-micro-py	MIT
