@@ -21,6 +21,20 @@
       "versioningTemplate": "semver",
       "autoReplaceStringTemplate": "UPSIDE_VERSION={{{newValue}}}\\nUPSIDE_COMMIT={{{newDigest}}}",
     },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^packages\\/superfile\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "SUPERFILE_VERSION=(?<currentValue>\\S+)\\s+SUPERFILE_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "yorukot/superfile",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "autoReplaceStringTemplate": "SUPERFILE_VERSION={{{newValue}}}\\nSUPERFILE_COMMIT={{{newDigest}}}",
+    },
   ],
 
   "packageRules": [
@@ -35,6 +49,7 @@
     {
       "matchPackageNames": [
         "deviationist/cockpit-upside",
+        "yorukot/superfile",
       ],
       "automerge": true,
       "automergeType": "pr",
