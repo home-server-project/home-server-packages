@@ -10,10 +10,10 @@ Implemented package pipelines:
 
 - UPSide (`deviationist/cockpit-upside`)
 - Superfile (`yorukot/superfile`)
+- VirtUI Manager (`aginies/virtui-manager`)
 
 Planned later:
 
-- VirtUI Manager
 - shared orchestration/validation workflow after the individual package pipelines are proven
 
 ## Policy
@@ -22,6 +22,7 @@ Planned later:
 - Package updates must build and pass their required distro tests before automatic promotion.
 - Fedora and Enterprise Linux artifacts are built/tested independently when their environments differ.
 - A single package artifact may serve both Fedora and Enterprise Linux only after the exact same artifact passes both validation environments.
+- Private bundled dependency trees must be locked and reproducible rather than resolved differently on each consumer-image build.
 - Third-party licenses and required notices remain with the package artifacts.
 - Corresponding source is retained with published artifacts when required by license terms and when useful for provenance.
 - No package version maintenance belongs in Gina, Rose, or other consuming image repositories.
