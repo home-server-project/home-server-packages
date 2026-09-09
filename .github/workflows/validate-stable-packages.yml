@@ -1,0 +1,306 @@
+---
+name: Validate stable package set
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Friday 22:45 UTC: 5h before Gina and 6h35 before Rose weekly builds.
+    - cron: '45 22 * * 5'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/validate-stable-packages.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: stable-package-set-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Resolve verified stable artifacts
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io \
+            -u "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      - name: Pull and verify stable package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          mkdir -p stable-set
+          printf 'package\tstable-image\tdigest\tversion\tupstream-commit\n' \
+            > stable-set/package-set.tsv
+
+          extract_package() {
+            local package="$1"
+            local expected_package="$2"
+            local image="${registry}/${package}:stable"
+            local dest="stable-set/${package}"
+            local cid
+            local digest
+
+            docker pull "${image}"
+            digest="$(docker image inspect "${image}" --format '{{index .RepoDigests 0}}')"
+            [[ "${digest}" == "${registry}/${package}@sha256:"* ]]
+
+            mkdir -p "${dest}"
+            cid="$(docker create "${image}" /bin/true)"
+            trap 'docker rm -f "${cid}" >/dev/null 2>&1 || true' RETURN
+
+            docker cp "${cid}:/rpms" "${dest}/"
+            docker cp "${cid}:/source" "${dest}/"
+            docker cp "${cid}:/licenses" "${dest}/"
+            docker cp "${cid}:/metadata" "${dest}/"
+            docker rm "${cid}" >/dev/null
+            trap - RETURN
+
+            (
+              cd "${dest}"
+              sha256sum -c metadata/SHA256SUMS
+              sha256sum -c metadata/rpm-sha256.txt
+
+              source metadata/package.env
+              [[ "${PACKAGE}" == "${expected_package}" ]]
+              [[ -n "${VERSION}" ]]
+              [[ "${UPSTREAM_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+
+              printf '%s\t%s\t%s\t%s\t%s\n' \
+                "${package}" \
+                "${image}" \
+                "${digest#*@}" \
+                "${VERSION}" \
+                "${UPSTREAM_COMMIT}" \
+                >> "${GITHUB_WORKSPACE}/stable-set/package-set.tsv"
+            )
+          }
+
+          extract_package cockpit-upside cockpit-upside
+          extract_package superfile superfile
+          extract_package virtui-manager virtui-manager
+
+          cat stable-set/package-set.tsv
+
+      - name: Stable package snapshot
+        shell: bash
+        run: |
+          {
+            echo '## Stable package snapshot'
+            echo
+            echo '```text'
+            column -t -s $'\t' stable-set/package-set.tsv
+            echo '```'
+            echo
+            echo 'All files covered by each published SHA256SUMS manifest were verified before validation.'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload exact stable package set
+        uses: actions/upload-artifact@v7
+        with:
+          name: stable-package-set
+          path: stable-set/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate stable package set - ${{ matrix.display_name }}
+    needs:
+      - prepare
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44
+            display_name: Fedora 44
+            container: registry.fedoraproject.org/fedora:44
+          - id: el10
+            display_name: AlmaLinux 10
+            container: almalinux:10
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Prepare validation repositories and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
+              echo 'ERROR: AlmaLinux CRB repository is not enabled.' >&2
+              exit 1
+            fi
+
+            dnf install -y epel-release
+          fi
+
+          dnf install -y rpm file
+          dnf clean all
+
+      - name: Download exact stable package set
+        uses: actions/download-artifact@v7
+        with:
+          name: stable-package-set
+          path: stable-set
+
+      - name: Reverify published package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for package in cockpit-upside superfile virtui-manager; do
+            (
+              cd "stable-set/${package}"
+              sha256sum -c metadata/SHA256SUMS
+              sha256sum -c metadata/rpm-sha256.txt
+            )
+          done
+
+      - name: Install stable package set together
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UPSIDE_RPM="$(find stable-set/cockpit-upside/rpms -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -print -quit)"
+          SUPERFILE_RPM="$(find stable-set/superfile/rpms -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
+          VIRTUI_RPM="$(find stable-set/virtui-manager/rpms -maxdepth 1 -type f -name 'virtui-manager-*.noarch.rpm' -print -quit)"
+
+          test -n "${UPSIDE_RPM}"
+          test -n "${SUPERFILE_RPM}"
+          test -n "${VIRTUI_RPM}"
+
+          dnf install -y \
+            "${UPSIDE_RPM}" \
+            "${SUPERFILE_RPM}" \
+            "${VIRTUI_RPM}"
+
+      - name: Validate installed stable package set
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source stable-set/cockpit-upside/metadata/package.env
+          UPSIDE_VERSION="${VERSION}"
+          source stable-set/superfile/metadata/package.env
+          SUPERFILE_VERSION="${VERSION}"
+          source stable-set/virtui-manager/metadata/package.env
+          VIRTUI_VERSION="${VERSION}"
+          VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
+
+          rpm -q cockpit-upside superfile virtui-manager
+
+          test -f /usr/share/cockpit/upside/manifest.json
+          test -f /usr/share/licenses/cockpit-upside/LICENSE
+
+          test -x /usr/bin/spf
+          /usr/bin/spf --version | tee /tmp/spf-version.txt
+          grep -Fq "v${SUPERFILE_VERSION}" /tmp/spf-version.txt
+          /usr/bin/spf --help >/dev/null
+
+          test -x /usr/bin/virtui-manager
+          test -x /usr/bin/vmc
+          test -L /usr/bin/virtui-manager-cmd
+          test -d /usr/libexec/virtui-manager/python
+
+          PYTHONPATH=/usr/libexec/virtui-manager/python \
+          EXPECTED_VIRTUI="${VIRTUI_VERSION}" \
+          EXPECTED_TEXTUAL="${VIRTUI_TEXTUAL_VERSION}" \
+          python3 - <<'PY'
+          import importlib.metadata
+          import os
+          import gi
+          import libvirt
+          import markdown_it
+          import netifaces
+          import packaging
+          import requests
+          import textual
+          import vmanager.wrapper
+          import yaml
+
+          virtui = importlib.metadata.version("virtui-manager")
+          textual_version = importlib.metadata.version("textual")
+          print("VirtUI Manager", virtui)
+          print("Textual", textual_version)
+          assert virtui == os.environ["EXPECTED_VIRTUI"]
+          assert textual_version == os.environ["EXPECTED_TEXTUAL"]
+          PY
+
+          /usr/bin/vmc --help >/dev/null
+
+          if find /usr/libexec/virtui-manager/python -type f -print0 \
+              | xargs -0 file | grep -q 'ELF'; then
+            echo 'ERROR: installed private VirtUI Python tree contains an ELF file' >&2
+            exit 1
+          fi
+
+          rpm -V cockpit-upside
+          rpm -V superfile
+          rpm -V virtui-manager
+
+          printf 'Validated stable set on %s: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s\n' \
+            "${{ matrix.display_name }}" \
+            "${UPSIDE_VERSION}" \
+            "${SUPERFILE_VERSION}" \
+            "${VIRTUI_VERSION}" \
+            "${VIRTUI_TEXTUAL_VERSION}"
+
+      - name: Validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## ${{ matrix.display_name }} stable package set'
+            echo
+            echo '- Package source: published GHCR `:stable` artifacts'
+            echo '- Installation mode: all three RPMs in one DNF transaction'
+            echo '- Result: ${{ job.status }}'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  result:
+    name: Stable package set healthy
+    needs:
+      - prepare
+      - validate
+    if: always()
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Aggregate validation result
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          prepare_result='${{ needs.prepare.result }}'
+          validate_result='${{ needs.validate.result }}'
+
+          {
+            echo '## Home Server stable package set'
+            echo
+            echo "- Artifact resolution and checksum verification: ${prepare_result}"
+            echo "- Fedora 44 + AlmaLinux 10 set validation: ${validate_result}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [[ "${prepare_result}" != 'success' || "${validate_result}" != 'success' ]]; then
+            echo 'ERROR: stable package set is not healthy.' >&2
+            exit 1
+          fi
+
+          echo 'Stable package set is healthy.'
