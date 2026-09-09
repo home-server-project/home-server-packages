@@ -26,3 +26,13 @@ Upstream: `https://github.com/yorukot/superfile`
 Declared license: `MIT`.
 
 The RPM build must include the upstream `LICENSE` file and `NOTICE.md`. The notice file is maintained upstream for bundled Go dependency notices and must be preserved with the binary package and published artifact. The exact upstream source used for each published Superfile RPM is retained for provenance.
+
+## VirtUI Manager
+
+Upstream: `https://github.com/aginies/virtui-manager`
+
+Declared license: `GPL-3.0-or-later`.
+
+The RPM build must include the upstream `LICENSE` file and retain the exact corresponding upstream source used for every published VirtUI Manager RPM.
+
+VirtUI Manager also carries a private, architecture-independent Python dependency tree for Textual under `/usr/libexec/virtui-manager/python`. The dependency declaration and `uv.lock` are retained with the published source artifact. Every locked private dependency must have an expected SPDX entry in `packages/virtui-manager/python/python-licenses.tsv`, and license material from each installed wheel must be retained in the RPM and published artifact. A missing license entry, missing wheel license file, unexpected dependency, or architecture-specific wheel blocks publication.
