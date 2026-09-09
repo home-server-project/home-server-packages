@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+
+  "extends": [
+    "config:best-practices",
+  ],
+
+  "rebaseWhen": "never",
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^packages\\/cockpit-upside\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "UPSIDE_VERSION=(?<currentValue>\\S+)\\s+UPSIDE_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "deviationist/cockpit-upside",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "autoReplaceStringTemplate": "UPSIDE_VERSION={{{newValue}}}\\nUPSIDE_COMMIT={{{newDigest}}}",
+    },
+  ],
+
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions",
+      ],
+      "pinDigests": true,
+      "automerge": true,
+      "automergeType": "pr",
+    },
+    {
+      "matchPackageNames": [
+        "deviationist/cockpit-upside",
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+    },
+  ],
+}
