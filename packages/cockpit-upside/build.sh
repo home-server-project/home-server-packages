@@ -5,11 +5,19 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 PKG_DIR="${ROOT_DIR}/packages/cockpit-upside"
 OUT_DIR="${ROOT_DIR}/out/cockpit-upside"
 SRC_DIR="${ROOT_DIR}/.work/cockpit-upside"
+RPMBUILD_DIR="${ROOT_DIR}/.work/rpmbuild-cockpit-upside"
+PAYLOAD_DIR="${ROOT_DIR}/.work/cockpit-upside-payload"
 
 source "${PKG_DIR}/package.env"
 
-rm -rf "${SRC_DIR}" "${OUT_DIR}"
-mkdir -p "${SRC_DIR}" "${OUT_DIR}/rpms" "${OUT_DIR}/source" "${OUT_DIR}/licenses" "${OUT_DIR}/metadata"
+rm -rf "${SRC_DIR}" "${OUT_DIR}" "${RPMBUILD_DIR}" "${PAYLOAD_DIR}"
+mkdir -p \
+    "${SRC_DIR}" \
+    "${OUT_DIR}/rpms" \
+    "${OUT_DIR}/source" \
+    "${OUT_DIR}/licenses" \
+    "${OUT_DIR}/metadata" \
+    "${RPMBUILD_DIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 
 git clone --filter=blob:none --no-checkout "${UPSIDE_UPSTREAM}.git" "${SRC_DIR}"
 cd "${SRC_DIR}"
@@ -24,28 +32,48 @@ fi
 
 git checkout --detach "${UPSIDE_COMMIT}"
 
-# Build through upstream's own RPM target. This intentionally lets the upstream
-# spec choose distro-specific behavior (for example Fedora bundle rebuilding).
-make rpm
+# Build the same static bundle approach already used by Home Server images.
+make
 
-find . -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -exec cp -v {} "${OUT_DIR}/rpms/" \;
+test -f dist/manifest.json
+test -f dist/index.js.LEGAL.txt
+
+mkdir -p \
+    "${PAYLOAD_DIR}/usr/share/cockpit/upside" \
+    "${PAYLOAD_DIR}/usr/share/metainfo" \
+    "${PAYLOAD_DIR}/usr/share/doc/cockpit-upside" \
+    "${PAYLOAD_DIR}/usr/share/licenses/cockpit-upside"
+
+cp -a dist/. "${PAYLOAD_DIR}/usr/share/cockpit/upside/"
+cp -a io.github.deviationist.upside.metainfo.xml \
+    "${PAYLOAD_DIR}/usr/share/metainfo/io.github.deviationist.upside.metainfo.xml"
+install -Dm0644 README.md "${PAYLOAD_DIR}/usr/share/doc/cockpit-upside/README.md"
+install -Dm0644 LICENSE "${PAYLOAD_DIR}/usr/share/licenses/cockpit-upside/LICENSE"
+install -Dm0644 dist/index.js.LEGAL.txt \
+    "${PAYLOAD_DIR}/usr/share/licenses/cockpit-upside/index.js.LEGAL.txt"
+
+# Source maps are development-only and are not shipped by upstream's distro packages.
+find "${PAYLOAD_DIR}/usr/share/cockpit/upside" -type f -name '*.map' -delete
+
+tar -C "${PAYLOAD_DIR}" -czf "${RPMBUILD_DIR}/SOURCES/cockpit-upside-payload.tar.gz" .
+cp "${PKG_DIR}/cockpit-upside.spec" "${RPMBUILD_DIR}/SPECS/cockpit-upside.spec"
+
+rpmbuild -bb \
+    --define "_topdir ${RPMBUILD_DIR}" \
+    --define "upside_version ${UPSIDE_VERSION}" \
+    "${RPMBUILD_DIR}/SPECS/cockpit-upside.spec"
+
+find "${RPMBUILD_DIR}/RPMS" -type f -name 'cockpit-upside-*.noarch.rpm' \
+    -exec cp -v {} "${OUT_DIR}/rpms/" \;
 test -n "$(find "${OUT_DIR}/rpms" -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -print -quit)"
 
-# Retain the exact upstream-generated source inputs used by rpmbuild. These
-# include the source/dist archive and, when upstream creates it, the locked npm
-# module cache used for Fedora bundle rebuilding.
-find . -maxdepth 1 -type f \
-    \( -name 'cockpit-upside-*.tar.xz' -o -name 'cockpit-upside.spec' \) \
-    -exec cp -v {} "${OUT_DIR}/source/" \;
-
-# Also retain a plain archive of the exact pinned upstream commit. This gives a
-# simple source snapshot independent of generated build artifacts.
+# Retain corresponding upstream source and packaging recipe with the binary artifact.
 git archive --format=tar.gz --prefix="cockpit-upside-${UPSIDE_VERSION}/" \
     -o "${OUT_DIR}/source/cockpit-upside-${UPSIDE_VERSION}-${UPSIDE_COMMIT}.tar.gz" \
     "${UPSIDE_COMMIT}"
+cp "${PKG_DIR}/cockpit-upside.spec" "${OUT_DIR}/source/cockpit-upside.spec"
 
 install -Dm0644 LICENSE "${OUT_DIR}/licenses/LICENSE"
-test -f dist/index.js.LEGAL.txt
 install -Dm0644 dist/index.js.LEGAL.txt "${OUT_DIR}/licenses/index.js.LEGAL.txt"
 
 cat > "${OUT_DIR}/metadata/package.env" <<EOF
@@ -54,6 +82,7 @@ VERSION=${UPSIDE_VERSION}
 UPSTREAM_COMMIT=${UPSIDE_COMMIT}
 LICENSE=${UPSIDE_LICENSE}
 UPSTREAM=${UPSIDE_UPSTREAM}
+PACKAGE_CHANNEL=universal
 EOF
 
 sha256sum "${OUT_DIR}"/rpms/* "${OUT_DIR}"/source/* "${OUT_DIR}"/licenses/* \
@@ -62,12 +91,13 @@ sha256sum "${OUT_DIR}"/rpms/* "${OUT_DIR}"/source/* "${OUT_DIR}"/licenses/* \
 rpm -qpl "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-files.txt"
 rpm -qpR "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-requires.txt"
 rpm -qpi "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-info.txt"
+sha256sum "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-sha256.txt"
 
-# License/compliance gates.
-grep -q '/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
-grep -q '/index.js.LEGAL.txt$' "${OUT_DIR}/metadata/rpm-files.txt"
+# Package and license/compliance gates.
+grep -q '/usr/share/cockpit/upside/manifest.json$' "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/licenses/cockpit-upside/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/licenses/cockpit-upside/index.js.LEGAL.txt$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: LGPL-2.1-or-later$' "${OUT_DIR}/metadata/rpm-info.txt"
 grep -q 'cockpit-bridge' "${OUT_DIR}/metadata/rpm-requires.txt"
-test -n "$(find "${OUT_DIR}/source" -maxdepth 1 -type f -name 'cockpit-upside-*.tar.xz' -print -quit)"
 
-printf 'Built and validated cockpit-upside %s from %s\n' "${UPSIDE_VERSION}" "${UPSIDE_COMMIT}"
+printf 'Built neutral cockpit-upside %s RPM from %s\n' "${UPSIDE_VERSION}" "${UPSIDE_COMMIT}"
