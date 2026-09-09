@@ -127,6 +127,7 @@ grep -q '^x86_64$' "${OUT_DIR}/metadata/rpm-arch.txt"
 grep -q '/usr/bin/spf$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/share/licenses/superfile/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/share/licenses/superfile/NOTICE.md$' "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/doc/superfile/README.md$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: MIT$' "${OUT_DIR}/metadata/rpm-info.txt"
 
 printf 'Built Superfile %s RPM from %s with upstream backport %s\n' \
