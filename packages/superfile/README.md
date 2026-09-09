@@ -13,6 +13,12 @@ The upstream Linux build uses `CGO_ENABLED=0`, so the resulting x86_64 binary is
 
 A single RPM is published only when both validation jobs pass. If a future release proves distro-specific, the package layout can be split without changing the upstream version-tracking model.
 
+## Temporary upstream backport
+
+Superfile v1.6.0 has an upstream Linux trash bug when a file and the user's trash directory are on different filesystems. Home Server Project temporarily backports upstream commit `200a0b134574924e1c386996e1aba523a6992ab8`, which fixes Linux cross-filesystem trash handling.
+
+The exact patch is stored under `patches/`, applied after tag/commit verification, retained with the published source artifact, and included in artifact checksums. The build intentionally fails if the patch can no longer be applied cleanly, so a future upstream release that already contains the fix requires removal of the backport rather than silently carrying an unnecessary patch.
+
 ## Updates
 
 `package.env` is the source of truth for the upstream version and exact tag commit. Renovate watches `yorukot/superfile` releases and automatically updates both values together. CI then rebuilds, tests, validates and promotes the new package only when all required checks pass.
