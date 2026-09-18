@@ -28,7 +28,7 @@ tar -C %{buildroot} -xzf %{SOURCE0}
 %{_bindir}/fsck.mergerfs
 %{_bindir}/mergerfs.collect-info
 /sbin/mount.mergerfs
-%{_libdir}/mergerfs/preload.so
+/usr/lib/mergerfs/preload.so
 %{_mandir}/man1/mergerfs.1*
 %license %{_licensedir}/mergerfs/LICENSE
 %doc %{_docdir}/mergerfs/README.md
