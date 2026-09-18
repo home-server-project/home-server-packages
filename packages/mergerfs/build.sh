@@ -37,11 +37,13 @@ test -f LICENSE
 test -f README.md
 test -f Makefile
 
-rpm_arch="$(rpm --eval '%{_arch}')"
-if [[ "${rpm_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
-    echo "ERROR: build environment RPM architecture is ${rpm_arch}; expected ${EXPECTED_RPM_ARCH}" >&2
+glibc_arch="$(rpm -q --qf "%{ARCH}\\n" glibc | head -n1)"
+if [[ "${glibc_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
+    echo "ERROR: glibc RPM architecture is ${glibc_arch}; expected ${EXPECTED_RPM_ARCH}" >&2
     exit 1
 fi
+
+echo "Validated RPM architecture: ${glibc_arch}"
 
 make RELEASE=1 tests
 ./build/tests
@@ -55,6 +57,7 @@ git archive \
 cp "${PKG_DIR}/mergerfs.spec" "${RPMBUILD_DIR}/SPECS/mergerfs.spec"
 
 rpmbuild -bb \
+    --target x86_64_v2 \
     --define "_topdir ${RPMBUILD_DIR}" \
     --define "mergerfs_version ${MERGERFS_VERSION}" \
     "${RPMBUILD_DIR}/SPECS/mergerfs.spec"
