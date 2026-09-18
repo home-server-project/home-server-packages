@@ -37,6 +37,18 @@ test -f LICENSE
 test -f README.md
 test -f Makefile
 
+./buildtools/update-version
+test -f VERSION
+test -f src/version.hpp
+
+generated_version="$(cat VERSION)"
+if [[ "${generated_version}" != "${MERGERFS_VERSION}" ]]; then
+    echo "ERROR: generated mergerfs version is ${generated_version}; expected ${MERGERFS_VERSION}" >&2
+    exit 1
+fi
+
+grep -Fq "MERGERFS_VERSION[] = \"${MERGERFS_VERSION}\"" src/version.hpp
+
 glibc_arch="$(rpm -q --qf "%{ARCH}\\n" glibc | head -n1)"
 if [[ "${glibc_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
     echo "ERROR: glibc RPM architecture is ${glibc_arch}; expected ${EXPECTED_RPM_ARCH}" >&2
@@ -48,11 +60,26 @@ echo "Validated RPM architecture: ${glibc_arch}"
 make RELEASE=1 tests
 ./build/tests
 
-git archive \
-    --format=tar.gz \
-    --prefix="mergerfs-${MERGERFS_VERSION}/" \
-    -o "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" \
-    "${MERGERFS_COMMIT}"
+SOURCE_STAGE="${RPMBUILD_DIR}/SOURCE-STAGE"
+rm -rf "${SOURCE_STAGE}"
+mkdir -p "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}"
+
+git archive "${MERGERFS_COMMIT}" | \
+    tar -x -C "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}"
+
+install -Dm0644 VERSION \
+    "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}/VERSION"
+install -Dm0644 src/version.hpp \
+    "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}/src/version.hpp"
+
+tar -C "${SOURCE_STAGE}" \
+    -czf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" \
+    "mergerfs-${MERGERFS_VERSION}"
+
+tar -tzf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" | \
+    grep -Fxq "mergerfs-${MERGERFS_VERSION}/VERSION"
+tar -tzf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" | \
+    grep -Fxq "mergerfs-${MERGERFS_VERSION}/src/version.hpp"
 
 cp "${PKG_DIR}/mergerfs.spec" "${RPMBUILD_DIR}/SPECS/mergerfs.spec"
 
