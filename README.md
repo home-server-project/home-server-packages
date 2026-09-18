@@ -10,6 +10,7 @@ Implemented and published package pipelines:
 
 - UPSide (`deviationist/cockpit-upside`)
 - Superfile (`yorukot/superfile`)
+- mergerfs (`trapexit/mergerfs`) — AlmaLinux 10 x86-64-v2 compatibility build
 - VirtUI Manager (`aginies/virtui-manager`)
 
 Each package keeps its own independent pipeline:
@@ -30,21 +31,29 @@ immutable GHCR artifact
 
 ## Stable package set
 
-The published stable package set is also validated together on:
+The published shared stable package set is also validated together on:
 
 - Fedora 44
 - AlmaLinux 10 + EPEL
+
+The shared validator covers the normal `:stable` package channels. Architecture-specific compatibility packages, such as mergerfs `:stable-v2`, use their own build and validation pipeline.
 
 The shared validator does not rebuild packages. It pulls the exact published `:stable` artifacts, verifies their checksums and metadata, installs the package set together, and runs functional checks.
 
 The scheduled validation runs every Friday at 22:45 UTC, before the weekly Gina and Rose image builds.
 
-Current stable artifact channels:
+Current shared stable artifact channels:
 
 ```text
 ghcr.io/home-server-project/cockpit-upside:stable
 ghcr.io/home-server-project/superfile:stable
 ghcr.io/home-server-project/virtui-manager:stable
+```
+
+Architecture-specific compatibility channel:
+
+```text
+ghcr.io/home-server-project/mergerfs:stable-v2
 ```
 
 Each package also publishes an immutable versioned tag.
@@ -53,7 +62,7 @@ Each package also publishes an immutable versioned tag.
 
 Upstream updates are automatic.
 
-Exact upstream versions and commits, and private dependency locks where required, are maintained in this repository. A package update must build and pass its required validation before it is promoted to the stable channel.
+Exact upstream versions and commits, and private dependency locks where required, are maintained in this repository. A package update must build and pass its required validation before it is promoted to its stable channel.
 
 The shared stable-package validation then checks the already-published package set against the current Fedora and AlmaLinux environments before the scheduled operating-system image builds.
 

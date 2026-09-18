@@ -1,0 +1,304 @@
+---
+name: Build mergerfs package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/mergerfs/**'
+      - '.github/workflows/build-mergerfs.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/mergerfs/**'
+      - '.github/workflows/build-mergerfs.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mergerfs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ALMA_IMAGE: quay.io/almalinuxorg/10-base:10
+
+jobs:
+  build:
+    name: Build mergerfs RPM
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Install build container tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman skopeo
+
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Resolve AlmaLinux x86-64-v2 build image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          digest="$(skopeo inspect \
+            --override-arch amd64 \
+            --override-variant v2 \
+            --format '{{.Digest}}' \
+            "docker://${ALMA_IMAGE}")"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "ALMA_REF=${ALMA_IMAGE%:*}@${digest}" >> "${GITHUB_ENV}"
+
+      - name: Build and test mergerfs RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo podman run --rm \
+            --platform linux/amd64/v2 \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "${ALMA_REF}" \
+            /bin/bash -lc '
+              set -euo pipefail
+              dnf install -y \
+                binutils \
+                file \
+                gcc-c++ \
+                git \
+                gzip \
+                libatomic \
+                make \
+                rpm-build \
+                tar
+              dnf clean all
+              bash packages/mergerfs/build.sh
+            '
+
+      - name: Upload mergerfs RPM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mergerfs-x86_64_v2
+          path: out/mergerfs/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate mergerfs - AlmaLinux 10 x86-64-v2
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Install validation container tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman skopeo
+
+      - name: Download exact mergerfs RPM artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: mergerfs-x86_64_v2
+          path: package
+
+      - name: Resolve AlmaLinux x86-64-v2 validation image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          digest="$(skopeo inspect \
+            --override-arch amd64 \
+            --override-variant v2 \
+            --format '{{.Digest}}' \
+            "docker://${ALMA_IMAGE}")"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "ALMA_REF=${ALMA_IMAGE%:*}@${digest}" >> "${GITHUB_ENV}"
+
+      - name: Verify and install exact RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo podman run --rm --privileged \
+            --platform linux/amd64/v2 \
+            --device /dev/fuse \
+            -v "${GITHUB_WORKSPACE}/package:/package" \
+            "${ALMA_REF}" \
+            /bin/bash -lc '
+              set -euo pipefail
+
+              dnf install -y fuse3 rpm util-linux
+              dnf clean all
+
+              (
+                cd /package
+                cat metadata/rpm-sha256.txt
+                sha256sum -c metadata/rpm-sha256.txt
+              )
+
+              RPM_FILE="$(find /package/rpms -maxdepth 1 -type f -name "mergerfs-*.x86_64_v2.rpm" -print -quit)"
+              test -n "${RPM_FILE}"
+
+              source /package/metadata/package.env
+              [[ "${PACKAGE}" == "mergerfs" ]]
+              [[ "${RPM_ARCH}" == "x86_64_v2" ]]
+              [[ "${PACKAGE_CHANNEL}" == "el10-x86_64_v2" ]]
+
+              dnf install -y "${RPM_FILE}"
+
+              rpm -q mergerfs
+              test -x /usr/bin/mergerfs
+              test -x /usr/bin/mergerfs-fusermount
+              test -L /usr/bin/fsck.mergerfs
+              test -L /usr/bin/mergerfs.collect-info
+              test -x /sbin/mount.mergerfs
+              test -f /usr/lib/mergerfs/preload.so
+              test -f /usr/share/licenses/mergerfs/LICENSE
+              test -f /usr/share/doc/mergerfs/README.md
+
+              rpm -q --qf "%{ARCH}\n" mergerfs | grep -Fqx "x86_64_v2"
+
+              /usr/bin/mergerfs --version | tee /tmp/mergerfs-version.txt
+              grep -Fq "${VERSION}" /tmp/mergerfs-version.txt
+
+              test_root="$(mktemp -d)"
+              mkdir -p "${test_root}/a" "${test_root}/b" "${test_root}/pool"
+              printf "branch-a\n" > "${test_root}/a/a.txt"
+              printf "branch-b\n" > "${test_root}/b/b.txt"
+
+              cleanup() {
+                if mountpoint -q "${test_root}/pool"; then
+                  umount "${test_root}/pool" || true
+                fi
+                rm -rf "${test_root}"
+              }
+              trap cleanup EXIT
+
+              /usr/bin/mergerfs -f "${test_root}/a:${test_root}/b" "${test_root}/pool" &
+              mergerfs_pid=$!
+
+              mounted=0
+              for _ in $(seq 1 20); do
+                if mountpoint -q "${test_root}/pool"; then
+                  mounted=1
+                  break
+                fi
+                sleep 0.25
+              done
+
+              if [[ "${mounted}" -ne 1 ]]; then
+                echo "ERROR: mergerfs functional test did not mount" >&2
+                kill "${mergerfs_pid}" >/dev/null 2>&1 || true
+                wait "${mergerfs_pid}" >/dev/null 2>&1 || true
+                exit 1
+              fi
+
+              grep -Fqx "branch-a" "${test_root}/pool/a.txt"
+              grep -Fqx "branch-b" "${test_root}/pool/b.txt"
+              printf "through-pool\n" > "${test_root}/pool/write-test.txt"
+              grep -Fqx "through-pool" "${test_root}/pool/write-test.txt"
+
+              umount "${test_root}/pool"
+              wait "${mergerfs_pid}" >/dev/null 2>&1 || true
+              trap - EXIT
+              rm -rf "${test_root}"
+
+              rpm -V mergerfs
+
+              mkdir -p /package/validation/el10-v2
+              cat /etc/os-release > /package/validation/el10-v2/os-release.txt
+              rpm -q mergerfs > /package/validation/el10-v2/mergerfs.txt
+              rpm -q --qf "%{ARCH}\n" mergerfs > /package/validation/el10-v2/rpm-arch.txt
+              cp /tmp/mergerfs-version.txt /package/validation/el10-v2/mergerfs-version.txt
+              sha256sum "${RPM_FILE}" > /package/validation/el10-v2/rpm-sha256.txt
+              chmod -R a+rX /package/validation
+            '
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: mergerfs-validation-el10-v2
+          path: package/validation/el10-v2/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified mergerfs artifact
+    needs:
+      - build
+      - validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download validated package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: mergerfs-x86_64_v2
+          path: package
+
+      - name: Read package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source package/metadata/package.env
+
+          echo "MERGERFS_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "MERGERFS_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mergerfs" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF
+          FROM scratch
+          LABEL org.opencontainers.image.title="mergerfs package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project mergerfs x86-64-v2 RPM, source, license, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${MERGERFS_VERSION}" \
+                io.home-server-project.package="mergerfs" \
+                io.home-server-project.upstream-commit="${MERGERFS_COMMIT}" \
+                io.home-server-project.channel="el10-x86_64_v2"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF
+
+          docker build \
+            --file package/Containerfile \
+            --tag "${PACKAGE_IMAGE}:${MERGERFS_VERSION}-1.hsp-v2" \
+            --tag "${PACKAGE_IMAGE}:stable-v2" \
+            package
+
+      - name: Publish immutable and stable-v2 tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${MERGERFS_VERSION}-1.hsp-v2"
+          docker push "${PACKAGE_IMAGE}:stable-v2"

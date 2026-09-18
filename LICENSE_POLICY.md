@@ -36,3 +36,11 @@ Declared license: `GPL-3.0-or-later`.
 The RPM build must include the upstream `LICENSE` file and retain the exact corresponding upstream source used for every published VirtUI Manager RPM.
 
 VirtUI Manager also carries a private, architecture-independent Python dependency tree for Textual under `/usr/libexec/virtui-manager/python`. The dependency declaration and `uv.lock` are retained with the published source artifact. Every locked private dependency must have an expected SPDX entry in `packages/virtui-manager/python/python-licenses.tsv`, and license material from each installed wheel must be retained in the RPM and published artifact. A missing license entry, missing wheel license file, unexpected dependency, or architecture-specific wheel blocks publication.
+
+## mergerfs
+
+Upstream: `https://github.com/trapexit/mergerfs`
+
+Declared license: `ISC`.
+
+The RPM build must preserve the upstream `LICENSE` text. The exact upstream source and Home Server Project packaging recipe used for every x86-64-v2 mergerfs RPM are retained with the published artifact. The x86-64-v2 build must pass package and functional FUSE validation before publication.
