@@ -76,10 +76,10 @@ tar -C "${SOURCE_STAGE}" \
     -czf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" \
     "mergerfs-${MERGERFS_VERSION}"
 
-tar -tzf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" | \
-    grep -Fxq "mergerfs-${MERGERFS_VERSION}/VERSION"
-tar -tzf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" | \
-    grep -Fxq "mergerfs-${MERGERFS_VERSION}/src/version.hpp"
+ARCHIVE_LIST="${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.contents.txt"
+tar -tzf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" > "${ARCHIVE_LIST}"
+grep -Fxq "mergerfs-${MERGERFS_VERSION}/VERSION" "${ARCHIVE_LIST}"
+grep -Fxq "mergerfs-${MERGERFS_VERSION}/src/version.hpp" "${ARCHIVE_LIST}"
 
 cp "${PKG_DIR}/mergerfs.spec" "${RPMBUILD_DIR}/SPECS/mergerfs.spec"
 
