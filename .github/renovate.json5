@@ -44,6 +44,20 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
+        "/^packages\\/mergerfs\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "MERGERFS_VERSION=(?<currentValue>\\S+)\\s+MERGERFS_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "trapexit/mergerfs",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "autoReplaceStringTemplate": "MERGERFS_VERSION={{{newValue}}}\\nMERGERFS_COMMIT={{{newDigest}}}",
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
         "/^packages\\/virtui-manager\\/package\\.env$/",
       ],
       "matchStrings": [
@@ -79,6 +93,7 @@
       "matchPackageNames": [
         "deviationist/cockpit-upside",
         "yorukot/superfile",
+        "trapexit/mergerfs",
         "aginies/virtui-manager",
         "textual",
       ],

@@ -10,6 +10,7 @@ Implemented and published package pipelines:
 
 - UPSide (`deviationist/cockpit-upside`)
 - Superfile (`yorukot/superfile`)
+- mergerfs (`trapexit/mergerfs`) — normal EL10 and x86-64-v2 builds
 - VirtUI Manager (`aginies/virtui-manager`)
 
 Each package keeps its own independent pipeline:
@@ -44,6 +45,8 @@ Current stable artifact channels:
 ```text
 ghcr.io/home-server-project/cockpit-upside:stable
 ghcr.io/home-server-project/superfile:stable
+ghcr.io/home-server-project/mergerfs:stable
+ghcr.io/home-server-project/mergerfs:stable-v2
 ghcr.io/home-server-project/virtui-manager:stable
 ```
 

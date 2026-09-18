@@ -1,0 +1,198 @@
+---
+name: Build mergerfs package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/mergerfs/**'
+      - '.github/workflows/build-mergerfs.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+      - 'README.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/mergerfs/**'
+      - '.github/workflows/build-mergerfs.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mergerfs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ALMA_IMAGE: quay.io/almalinuxorg/10-base:10
+
+jobs:
+  build:
+    name: Build mergerfs (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86_64
+            platform: linux/amd64
+            upstream_variant: ''
+            rpm_arch: x86_64
+            channel: el10-x86_64
+            artifact: mergerfs-x86_64
+          - name: x86_64_v2
+            platform: linux/amd64/v2
+            upstream_variant: v2
+            rpm_arch: x86_64_v2
+            channel: el10-x86_64_v2
+            artifact: mergerfs-x86_64_v2
+
+    steps:
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Install container tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman skopeo
+
+      - name: Resolve AlmaLinux build image
+        shell: bash
+        env:
+          UPSTREAM_VARIANT: ${{ matrix.upstream_variant }}
+        run: |
+          set -euo pipefail
+          inspect_args=(--override-arch amd64)
+          if [[ -n "${UPSTREAM_VARIANT}" ]]; then
+            inspect_args+=(--override-variant "${UPSTREAM_VARIANT}")
+          fi
+
+          digest="$(skopeo inspect             "${inspect_args[@]}"             --format '{{.Digest}}'             "docker://${ALMA_IMAGE}")"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "ALMA_REF=${ALMA_IMAGE%:*}@${digest}" >> "${GITHUB_ENV}"
+          echo "Resolved ${{ matrix.platform }} build image: ${ALMA_IMAGE%:*}@${digest}"
+
+      - name: Build and validate exact mergerfs RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo podman run --rm --privileged             --platform "${{ matrix.platform }}"             --device /dev/fuse             -e "EXPECTED_RPM_ARCH=${{ matrix.rpm_arch }}"             -e "PACKAGE_CHANNEL=${{ matrix.channel }}"             -v "${GITHUB_WORKSPACE}:/workspace"             -w /workspace             "${ALMA_REF}"             /bin/bash -lc '
+              set -euo pipefail
+              dnf install -y                 binutils                 file                 findutils                 fuse3                 gcc-c++                 git                 gzip                 libatomic                 make                 rpm-build                 tar                 util-linux                 which
+              dnf clean all
+              bash packages/mergerfs/build.sh
+            '
+
+      - name: Verify artifact architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fqx "${{ matrix.rpm_arch }}" out/mergerfs/metadata/rpm-arch.txt
+          (
+            cd out/mergerfs
+            sha256sum -c metadata/SHA256SUMS
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+      - name: Upload mergerfs package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/mergerfs/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish mergerfs (${{ matrix.name }})
+    needs:
+      - build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86_64
+            rpm_arch: x86_64
+            artifact: mergerfs-x86_64
+            moving_tag: stable
+            immutable_suffix: ''
+            channel: el10-x86_64
+          - name: x86_64_v2
+            rpm_arch: x86_64_v2
+            artifact: mergerfs-x86_64_v2
+            moving_tag: stable-v2
+            immutable_suffix: '-v2'
+            channel: el10-x86_64_v2
+
+    steps:
+      - name: Download validated mergerfs artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: package
+
+      - name: Reverify package and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd package
+            sha256sum -c metadata/SHA256SUMS
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+          source package/metadata/package.env
+          [[ "${PACKAGE}" == "mergerfs" ]]
+          [[ "${RPM_ARCH}" == "${{ matrix.rpm_arch }}" ]]
+          [[ "${PACKAGE_CHANNEL}" == "${{ matrix.channel }}" ]]
+          [[ "${UPSTREAM_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+
+          echo "MERGERFS_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "MERGERFS_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mergerfs" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io             -u "${GITHUB_ACTOR}"             --password-stdin
+
+      - name: Build package OCI artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          immutable_tag="${MERGERFS_VERSION}-1.hsp${{ matrix.immutable_suffix }}"
+
+          cat > package/Containerfile <<EOF
+          FROM scratch
+          LABEL org.opencontainers.image.title="mergerfs package artifact"                 org.opencontainers.image.description="Verified Home Server Project mergerfs RPM, source, license, and build metadata"                 org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}"                 org.opencontainers.image.version="${MERGERFS_VERSION}"                 io.home-server-project.package="mergerfs"                 io.home-server-project.upstream-commit="${MERGERFS_COMMIT}"                 io.home-server-project.rpm-arch="${{ matrix.rpm_arch }}"                 io.home-server-project.channel="${{ matrix.channel }}"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF
+
+          docker build             --file package/Containerfile             --tag "${PACKAGE_IMAGE}:${immutable_tag}"             --tag "${PACKAGE_IMAGE}:${{ matrix.moving_tag }}"             package
+
+          echo "IMMUTABLE_TAG=${immutable_tag}" >> "${GITHUB_ENV}"
+
+      - name: Publish immutable and moving tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${IMMUTABLE_TAG}"
+          docker push "${PACKAGE_IMAGE}:${{ matrix.moving_tag }}"
