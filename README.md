@@ -10,7 +10,7 @@ Implemented and published package pipelines:
 
 - UPSide (`deviationist/cockpit-upside`)
 - Superfile (`yorukot/superfile`)
-- mergerfs (`trapexit/mergerfs`) — normal EL10 and x86-64-v2 builds
+- mergerfs (`trapexit/mergerfs`) — AlmaLinux 10 x86-64-v2 compatibility build
 - VirtUI Manager (`aginies/virtui-manager`)
 
 Each package keeps its own independent pipeline:
@@ -45,7 +45,6 @@ Current stable artifact channels:
 ```text
 ghcr.io/home-server-project/cockpit-upside:stable
 ghcr.io/home-server-project/superfile:stable
-ghcr.io/home-server-project/mergerfs:stable
 ghcr.io/home-server-project/mergerfs:stable-v2
 ghcr.io/home-server-project/virtui-manager:stable
 ```
@@ -56,7 +55,7 @@ Each package also publishes an immutable versioned tag.
 
 Upstream updates are automatic.
 
-Exact upstream versions and commits, and private dependency locks where required, are maintained in this repository. A package update must build and pass its required validation before it is promoted to the stable channel.
+Exact upstream versions and commits, and private dependency locks where required, are maintained in this repository. A package update must build and pass its required validation before it is promoted to its stable channel.
 
 The shared stable-package validation then checks the already-published package set against the current Fedora and AlmaLinux environments before the scheduled operating-system image builds.
 

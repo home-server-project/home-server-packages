@@ -1,6 +1,6 @@
-# mergerfs package
+# mergerfs x86-64-v2 package
 
-Home Server Project builds mergerfs directly from the verified upstream release source instead of consuming the generic upstream Enterprise Linux RPM.
+Home Server Project builds mergerfs directly from verified upstream source specifically for the AlmaLinux 10 x86-64-v2 compatibility architecture.
 
 Upstream: `https://github.com/trapexit/mergerfs`
 
@@ -8,21 +8,23 @@ License: ISC
 
 ## Why this package exists
 
-AlmaLinux 10 supports both the normal x86-64 baseline and an x86-64-v2 compatibility architecture. Generic third-party EL10 RPMs are not automatically safe for x86-64-v2 hardware.
+Generic third-party Enterprise Linux 10 RPMs are not automatically safe for x86-64-v2 hardware. Rose-v2 therefore needs a mergerfs RPM built in the AlmaLinux 10 x86-64-v2 environment.
 
-This package therefore builds mergerfs twice from the same exact upstream release:
+This package builds only:
 
-- normal AlmaLinux 10 → `x86_64`
 - AlmaLinux 10 x86-64-v2 → `x86_64_v2`
 
-Both builds must pass unit, RPM, ELF, installation, and functional FUSE mount/read/write/unmount validation before publication.
+Normal Rose continues to use its existing mergerfs path and is outside the scope of this package work.
 
-## Published channels
+The v2 build must pass unit, RPM, ELF, installation, and functional FUSE mount/read/write/unmount validation before publication.
 
-- `ghcr.io/home-server-project/mergerfs:stable`
-- `ghcr.io/home-server-project/mergerfs:stable-v2`
+## Published channel
 
-Each build also receives an immutable version tag.
+`ghcr.io/home-server-project/mergerfs:stable-v2`
+
+Immutable releases use tags such as:
+
+`2.42.0-1.hsp-v2`
 
 ## Updates
 

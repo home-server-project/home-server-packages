@@ -43,4 +43,4 @@ Upstream: `https://github.com/trapexit/mergerfs`
 
 Declared license: `ISC`.
 
-The RPM build must preserve the upstream `LICENSE` text. The exact upstream source and Home Server Project packaging recipe used for every normal and x86-64-v2 mergerfs RPM are retained with the published artifact. Both architecture-specific builds must pass their package and functional FUSE validation before publication.
+The RPM build must preserve the upstream `LICENSE` text. The exact upstream source and Home Server Project packaging recipe used for every x86-64-v2 mergerfs RPM are retained with the published artifact. The x86-64-v2 build must pass package and functional FUSE validation before publication.

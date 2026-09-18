@@ -6,9 +6,8 @@ PKG_DIR="${ROOT_DIR}/packages/mergerfs"
 OUT_DIR="${ROOT_DIR}/out/mergerfs"
 SRC_DIR="${ROOT_DIR}/.work/mergerfs"
 RPMBUILD_DIR="${ROOT_DIR}/.work/rpmbuild-mergerfs"
-
-: "${EXPECTED_RPM_ARCH:?EXPECTED_RPM_ARCH must be set}"
-: "${PACKAGE_CHANNEL:?PACKAGE_CHANNEL must be set}"
+EXPECTED_RPM_ARCH=x86_64_v2
+PACKAGE_CHANNEL=el10-x86_64_v2
 
 source "${PKG_DIR}/package.env"
 
@@ -44,7 +43,6 @@ if [[ "${rpm_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
     exit 1
 fi
 
-# Compile and run upstream's C++ unit-test binary before packaging.
 make RELEASE=1 tests
 ./build/tests
 
@@ -72,7 +70,6 @@ fi
 
 cp -v "${RPM_FILE}" "${OUT_DIR}/rpms/"
 
-# Keep exact source, packaging recipe, license, and provenance with the artifact.
 git archive \
     --format=tar.gz \
     --prefix="mergerfs-${MERGERFS_VERSION}/" \
@@ -103,8 +100,7 @@ printf '%s\n' "${built_arch}" > "${OUT_DIR}/metadata/rpm-arch.txt"
     sha256sum rpms/*.rpm > metadata/rpm-sha256.txt
 )
 
-# Package and license/compliance gates.
-grep -q "^${EXPECTED_RPM_ARCH}$" "${OUT_DIR}/metadata/rpm-arch.txt"
+grep -Fqx "${EXPECTED_RPM_ARCH}" "${OUT_DIR}/metadata/rpm-arch.txt"
 grep -q '/usr/bin/mergerfs$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/bin/mergerfs-fusermount$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/bin/fsck.mergerfs$' "${OUT_DIR}/metadata/rpm-files.txt"
@@ -114,7 +110,6 @@ grep -q '/usr/lib/mergerfs/preload.so$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/share/licenses/mergerfs/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: ISC$' "${OUT_DIR}/metadata/rpm-info.txt"
 
-# Install and exercise the exact RPM produced above.
 dnf install -y "${RPM_FILE}"
 rpm -q mergerfs
 rpm -V mergerfs
@@ -124,8 +119,6 @@ grep -Fq "${MERGERFS_VERSION}" "${OUT_DIR}/metadata/mergerfs-version.txt"
 readelf -h /usr/bin/mergerfs > "${OUT_DIR}/metadata/mergerfs-elf.txt"
 file /usr/bin/mergerfs >> "${OUT_DIR}/metadata/mergerfs-elf.txt"
 
-# Functional FUSE gate: mount two branches, read both, write through the pool,
-# then unmount. Publication is blocked if this basic filesystem path fails.
 TEST_ROOT="$(mktemp -d)"
 mkdir -p "${TEST_ROOT}/a" "${TEST_ROOT}/b" "${TEST_ROOT}/pool"
 printf 'branch-a\n' > "${TEST_ROOT}/a/a.txt"
@@ -168,5 +161,5 @@ wait "${MFS_PID}" >/dev/null 2>&1 || true
 trap - EXIT
 rm -rf "${TEST_ROOT}"
 
-printf 'Built and validated mergerfs %s from %s for %s (%s)\n' \
-    "${MERGERFS_VERSION}" "${MERGERFS_COMMIT}" "${PACKAGE_CHANNEL}" "${EXPECTED_RPM_ARCH}"
+printf 'Built and validated mergerfs %s from %s for x86-64-v2\n' \
+    "${MERGERFS_VERSION}" "${MERGERFS_COMMIT}"
