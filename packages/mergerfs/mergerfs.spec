@@ -1,47 +1,34 @@
 Name:           mergerfs
 Version:        %{mergerfs_version}
-Release:        1.hsp%{?dist}
+Release:        1.hsp
 Summary:        Featureful FUSE based union filesystem
 License:        ISC
 URL:            https://github.com/trapexit/mergerfs
-Source0:        mergerfs-%{version}.tar.gz
-
-BuildRequires:  gcc-c++
-BuildRequires:  git
-BuildRequires:  make
-BuildRequires:  libatomic
-
-%global debug_package %{nil}
-%undefine _debuginfo_subpackages
-%global _enable_debug_packages 0
+Source0:        mergerfs-payload.tar.gz
 
 %description
 mergerfs is a union filesystem geared toward simplifying storage and
 management of files across numerous commodity storage devices.
 
+This Home Server Project package contains the AlmaLinux 10 x86-64-v2 mergerfs
+payload built from an exact verified upstream release and commit.
+
 %prep
-%setup -q
 
 %build
-make %{?_smp_mflags} \
-    CFLAGS="%{optflags}" \
-    CXXFLAGS="%{optflags}" \
-    LDFLAGS="%{__global_ldflags}"
 
 %install
-make install PREFIX=%{_prefix} DESTDIR=%{buildroot}
+rm -rf %{buildroot}
+mkdir -p %{buildroot}
+tar -C %{buildroot} -xzf %{SOURCE0}
 
 %files
-%license LICENSE
-%doc README.md
-/usr/bin/mergerfs
-/usr/bin/mergerfs-fusermount
-/usr/bin/fsck.mergerfs
-/usr/bin/mergerfs.collect-info
+%{_bindir}/mergerfs
+%{_bindir}/mergerfs-fusermount
+%{_bindir}/fsck.mergerfs
+%{_bindir}/mergerfs.collect-info
 /sbin/mount.mergerfs
-/usr/lib/mergerfs/preload.so
-%{_mandir}/*
-
-%changelog
-* Fri Sep 18 2026 Home Server Project <noreply@home-server-project>
-- Build mergerfs from verified upstream source for Home Server Project
+%{_libdir}/mergerfs/preload.so
+%{_mandir}/man1/mergerfs.1*
+%license %{_licensedir}/mergerfs/LICENSE
+%doc %{_docdir}/mergerfs/README.md

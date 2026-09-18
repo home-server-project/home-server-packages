@@ -6,12 +6,12 @@ PKG_DIR="${ROOT_DIR}/packages/mergerfs"
 OUT_DIR="${ROOT_DIR}/out/mergerfs"
 SRC_DIR="${ROOT_DIR}/.work/mergerfs"
 RPMBUILD_DIR="${ROOT_DIR}/.work/rpmbuild-mergerfs"
+PAYLOAD_DIR="${ROOT_DIR}/.work/mergerfs-payload"
 EXPECTED_RPM_ARCH=x86_64_v2
-PACKAGE_CHANNEL=el10-x86_64_v2
 
 source "${PKG_DIR}/package.env"
 
-rm -rf "${SRC_DIR}" "${OUT_DIR}" "${RPMBUILD_DIR}"
+rm -rf "${SRC_DIR}" "${OUT_DIR}" "${RPMBUILD_DIR}" "${PAYLOAD_DIR}"
 mkdir -p \
     "${SRC_DIR}" \
     "${OUT_DIR}/rpms" \
@@ -36,18 +36,17 @@ git checkout --detach "${MERGERFS_COMMIT}"
 test -f LICENSE
 test -f README.md
 test -f Makefile
+test -x buildtools/update-version
 
 ./buildtools/update-version
+
 test -f VERSION
 test -f src/version.hpp
-
 generated_version="$(cat VERSION)"
 if [[ "${generated_version}" != "${MERGERFS_VERSION}" ]]; then
     echo "ERROR: generated mergerfs version is ${generated_version}; expected ${MERGERFS_VERSION}" >&2
     exit 1
 fi
-
-grep -Fq "MERGERFS_VERSION[] = \"${MERGERFS_VERSION}\"" src/version.hpp
 
 glibc_arch="$(rpm -q --qf "%{ARCH}\\n" glibc | head -n1)"
 if [[ "${glibc_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
@@ -55,32 +54,30 @@ if [[ "${glibc_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
     exit 1
 fi
 
-echo "Validated RPM architecture: ${glibc_arch}"
+optflags="$(rpm --eval '%{optflags}')"
+ldflags="$(rpm --eval '%{__global_ldflags}')"
 
-make RELEASE=1 tests
+make \
+    CFLAGS="${optflags}" \
+    CXXFLAGS="${optflags}" \
+    LDFLAGS="${ldflags}" \
+    tests
 ./build/tests
 
-SOURCE_STAGE="${RPMBUILD_DIR}/SOURCE-STAGE"
-rm -rf "${SOURCE_STAGE}"
-mkdir -p "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}"
+./build/mergerfs --version | tee "${OUT_DIR}/metadata/mergerfs-version.txt"
+grep -Fq "${MERGERFS_VERSION}" "${OUT_DIR}/metadata/mergerfs-version.txt"
 
-git archive "${MERGERFS_COMMIT}" | \
-    tar -x -C "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}"
+make install \
+    PREFIX=/usr \
+    DESTDIR="${PAYLOAD_DIR}" \
+    CFLAGS="${optflags}" \
+    CXXFLAGS="${optflags}" \
+    LDFLAGS="${ldflags}"
 
-install -Dm0644 VERSION \
-    "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}/VERSION"
-install -Dm0644 src/version.hpp \
-    "${SOURCE_STAGE}/mergerfs-${MERGERFS_VERSION}/src/version.hpp"
+install -Dm0644 LICENSE "${PAYLOAD_DIR}/usr/share/licenses/mergerfs/LICENSE"
+install -Dm0644 README.md "${PAYLOAD_DIR}/usr/share/doc/mergerfs/README.md"
 
-tar -C "${SOURCE_STAGE}" \
-    -czf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" \
-    "mergerfs-${MERGERFS_VERSION}"
-
-ARCHIVE_LIST="${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.contents.txt"
-tar -tzf "${RPMBUILD_DIR}/SOURCES/mergerfs-${MERGERFS_VERSION}.tar.gz" > "${ARCHIVE_LIST}"
-grep -Fxq "mergerfs-${MERGERFS_VERSION}/VERSION" "${ARCHIVE_LIST}"
-grep -Fxq "mergerfs-${MERGERFS_VERSION}/src/version.hpp" "${ARCHIVE_LIST}"
-
+tar -C "${PAYLOAD_DIR}" -czf "${RPMBUILD_DIR}/SOURCES/mergerfs-payload.tar.gz" .
 cp "${PKG_DIR}/mergerfs.spec" "${RPMBUILD_DIR}/SPECS/mergerfs.spec"
 
 rpmbuild -bb \
@@ -89,25 +86,16 @@ rpmbuild -bb \
     --define "mergerfs_version ${MERGERFS_VERSION}" \
     "${RPMBUILD_DIR}/SPECS/mergerfs.spec"
 
-RPM_FILE="$(find "${RPMBUILD_DIR}/RPMS" -type f -name 'mergerfs-*.rpm' -print -quit)"
-test -n "${RPM_FILE}"
+find "${RPMBUILD_DIR}/RPMS" -type f -name 'mergerfs-*.x86_64_v2.rpm' \
+    -exec cp -v {} "${OUT_DIR}/rpms/" \;
+test -n "$(find "${OUT_DIR}/rpms" -maxdepth 1 -type f -name 'mergerfs-*.x86_64_v2.rpm' -print -quit)"
 
-built_arch="$(rpm -qp --qf '%{ARCH}\n' "${RPM_FILE}")"
-if [[ "${built_arch}" != "${EXPECTED_RPM_ARCH}" ]]; then
-    echo "ERROR: built mergerfs RPM architecture is ${built_arch}; expected ${EXPECTED_RPM_ARCH}" >&2
-    exit 1
-fi
-
-cp -v "${RPM_FILE}" "${OUT_DIR}/rpms/"
-
-git archive \
-    --format=tar.gz \
-    --prefix="mergerfs-${MERGERFS_VERSION}/" \
+git archive --format=tar.gz --prefix="mergerfs-${MERGERFS_VERSION}/" \
     -o "${OUT_DIR}/source/mergerfs-${MERGERFS_VERSION}-${MERGERFS_COMMIT}.tar.gz" \
     "${MERGERFS_COMMIT}"
 cp "${PKG_DIR}/mergerfs.spec" "${OUT_DIR}/source/mergerfs.spec"
+
 install -Dm0644 LICENSE "${OUT_DIR}/licenses/LICENSE"
-install -Dm0644 README.md "${OUT_DIR}/source/README.md"
 
 cat > "${OUT_DIR}/metadata/package.env" <<EOF
 PACKAGE=mergerfs
@@ -115,20 +103,20 @@ VERSION=${MERGERFS_VERSION}
 UPSTREAM_COMMIT=${MERGERFS_COMMIT}
 LICENSE=${MERGERFS_LICENSE}
 UPSTREAM=${MERGERFS_UPSTREAM}
-PACKAGE_CHANNEL=${PACKAGE_CHANNEL}
+PACKAGE_CHANNEL=el10-x86_64_v2
 RPM_ARCH=${EXPECTED_RPM_ARCH}
 EOF
-
-rpm -qpl "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-files.txt"
-rpm -qpR "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-requires.txt"
-rpm -qpi "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-info.txt"
-printf '%s\n' "${built_arch}" > "${OUT_DIR}/metadata/rpm-arch.txt"
 
 (
     cd "${OUT_DIR}"
     sha256sum rpms/* source/* licenses/* > metadata/SHA256SUMS
     sha256sum rpms/*.rpm > metadata/rpm-sha256.txt
 )
+
+rpm -qpl "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-files.txt"
+rpm -qpR "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-requires.txt"
+rpm -qpi "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-info.txt"
+rpm -qp --qf '%{ARCH}\n' "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-arch.txt"
 
 grep -Fqx "${EXPECTED_RPM_ARCH}" "${OUT_DIR}/metadata/rpm-arch.txt"
 grep -q '/usr/bin/mergerfs$' "${OUT_DIR}/metadata/rpm-files.txt"
@@ -138,58 +126,8 @@ grep -q '/usr/bin/mergerfs.collect-info$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -Eq '/(usr/)?sbin/mount.mergerfs$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/lib/mergerfs/preload.so$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/share/licenses/mergerfs/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/doc/mergerfs/README.md$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: ISC$' "${OUT_DIR}/metadata/rpm-info.txt"
 
-dnf install -y "${RPM_FILE}"
-rpm -q mergerfs
-rpm -V mergerfs
-/usr/bin/mergerfs --version | tee "${OUT_DIR}/metadata/mergerfs-version.txt"
-grep -Fq "${MERGERFS_VERSION}" "${OUT_DIR}/metadata/mergerfs-version.txt"
-
-readelf -h /usr/bin/mergerfs > "${OUT_DIR}/metadata/mergerfs-elf.txt"
-file /usr/bin/mergerfs >> "${OUT_DIR}/metadata/mergerfs-elf.txt"
-
-TEST_ROOT="$(mktemp -d)"
-mkdir -p "${TEST_ROOT}/a" "${TEST_ROOT}/b" "${TEST_ROOT}/pool"
-printf 'branch-a\n' > "${TEST_ROOT}/a/a.txt"
-printf 'branch-b\n' > "${TEST_ROOT}/b/b.txt"
-
-cleanup() {
-    if mountpoint -q "${TEST_ROOT}/pool"; then
-        umount "${TEST_ROOT}/pool" || true
-    fi
-    rm -rf "${TEST_ROOT}"
-}
-trap cleanup EXIT
-
-/usr/bin/mergerfs -f "${TEST_ROOT}/a:${TEST_ROOT}/b" "${TEST_ROOT}/pool" &
-MFS_PID=$!
-
-mounted=0
-for _ in $(seq 1 20); do
-    if mountpoint -q "${TEST_ROOT}/pool"; then
-        mounted=1
-        break
-    fi
-    sleep 0.25
-done
-
-if [[ "${mounted}" -ne 1 ]]; then
-    echo "ERROR: mergerfs functional test did not mount" >&2
-    kill "${MFS_PID}" >/dev/null 2>&1 || true
-    wait "${MFS_PID}" >/dev/null 2>&1 || true
-    exit 1
-fi
-
-grep -Fqx 'branch-a' "${TEST_ROOT}/pool/a.txt"
-grep -Fqx 'branch-b' "${TEST_ROOT}/pool/b.txt"
-printf 'through-pool\n' > "${TEST_ROOT}/pool/write-test.txt"
-grep -Fqx 'through-pool' "${TEST_ROOT}/pool/write-test.txt"
-
-umount "${TEST_ROOT}/pool"
-wait "${MFS_PID}" >/dev/null 2>&1 || true
-trap - EXIT
-rm -rf "${TEST_ROOT}"
-
-printf 'Built and validated mergerfs %s from %s for x86-64-v2\n' \
+printf 'Built mergerfs %s x86-64-v2 RPM from %s\n' \
     "${MERGERFS_VERSION}" "${MERGERFS_COMMIT}"

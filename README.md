@@ -31,22 +31,29 @@ immutable GHCR artifact
 
 ## Stable package set
 
-The published stable package set is also validated together on:
+The published shared stable package set is also validated together on:
 
 - Fedora 44
 - AlmaLinux 10 + EPEL
+
+The shared validator covers the normal `:stable` package channels. Architecture-specific compatibility packages, such as mergerfs `:stable-v2`, use their own build and validation pipeline.
 
 The shared validator does not rebuild packages. It pulls the exact published `:stable` artifacts, verifies their checksums and metadata, installs the package set together, and runs functional checks.
 
 The scheduled validation runs every Friday at 22:45 UTC, before the weekly Gina and Rose image builds.
 
-Current stable artifact channels:
+Current shared stable artifact channels:
 
 ```text
 ghcr.io/home-server-project/cockpit-upside:stable
 ghcr.io/home-server-project/superfile:stable
-ghcr.io/home-server-project/mergerfs:stable-v2
 ghcr.io/home-server-project/virtui-manager:stable
+```
+
+Architecture-specific compatibility channel:
+
+```text
+ghcr.io/home-server-project/mergerfs:stable-v2
 ```
 
 Each package also publishes an immutable versioned tag.

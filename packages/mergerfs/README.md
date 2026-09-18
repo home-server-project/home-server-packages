@@ -1,33 +1,31 @@
 # mergerfs x86-64-v2 package
 
-Home Server Project builds mergerfs directly from verified upstream source specifically for the AlmaLinux 10 x86-64-v2 compatibility architecture.
+Home Server Project builds mergerfs from an exact verified upstream release and commit for AlmaLinux 10 x86-64-v2.
 
 Upstream: `https://github.com/trapexit/mergerfs`
 
 License: ISC
 
-## Why this package exists
+## Pipeline
 
-Generic third-party Enterprise Linux 10 RPMs are not automatically safe for x86-64-v2 hardware. Rose-v2 therefore needs a mergerfs RPM built in the AlmaLinux 10 x86-64-v2 environment.
+This package follows the same repository pattern as the other Home Server Packages:
 
-This package builds only:
+1. Build and run upstream tests.
+2. Package the built payload into an RPM.
+3. Upload the exact RPM artifact.
+4. Validate that exact RPM in the target environment.
+5. Publish only after build and validation succeed.
 
-- AlmaLinux 10 x86-64-v2 → `x86_64_v2`
+The architecture-specific exception is the build and validation environment: AlmaLinux 10 is resolved explicitly as `linux/amd64/v2`, using the same v2 selection pattern proven by Home Server Base 10.
 
-Normal Rose continues to use its existing mergerfs path and is outside the scope of this package work.
-
-The v2 build must pass unit, RPM, ELF, installation, and functional FUSE mount/read/write/unmount validation before publication.
+The package produced here is only `x86_64_v2`. Normal Rose continues to use its existing mergerfs path.
 
 ## Published channel
 
 `ghcr.io/home-server-project/mergerfs:stable-v2`
 
-Immutable releases use tags such as:
-
-`2.42.0-1.hsp-v2`
+Immutable releases use versioned tags such as `2.42.0-1.hsp-v2`.
 
 ## Updates
 
-`package.env` records the exact current upstream version and tag commit for reproducibility. Renovate monitors upstream mergerfs tags and automatically updates both values when a newer stable release appears. Manual version monitoring is not required.
-
-If an upstream release regresses, the package can be deliberately rolled back by pinning an earlier verified release.
+`package.env` records the exact upstream version and tag commit. Renovate monitors upstream mergerfs tags and updates both values automatically.
