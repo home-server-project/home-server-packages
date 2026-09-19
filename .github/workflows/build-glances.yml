@@ -56,13 +56,10 @@ jobs:
             python3-fastapi \
             python3-jinja2 \
             python3-packaging \
-            python3-pip \
             python3-psutil \
             python3-requests \
-            python3-setuptools \
             python3-shtab \
             python3-uvicorn \
-            python3-wheel \
             rpm-build \
             tar
           dnf clean all
@@ -145,7 +142,6 @@ jobs:
           PYTHONPATH=/usr/libexec/glances/python \
           EXPECTED_GLANCES="${VERSION}" \
           python3 - <<'PY'
-          import importlib.metadata
           import os
 
           import defusedxml
@@ -159,7 +155,7 @@ jobs:
           import shtab
           import uvicorn
 
-          version = importlib.metadata.version("Glances")
+          version = glances.__version__
           print("Glances", version)
           assert version == os.environ["EXPECTED_GLANCES"]
           assert callable(glances.main)

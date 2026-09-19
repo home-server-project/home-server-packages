@@ -60,24 +60,18 @@ if expected not in version_text:
     raise SystemExit(f"Glances source does not contain expected version {expected}")
 PY
 
-# Install only the exact Glances application source. Runtime libraries remain
-# distro packages so the payload stays small and follows the host Python ABI.
-python3 -m pip install \
-    --no-deps \
-    --no-build-isolation \
-    --no-compile \
-    --target "${PRIVATE_DIR}" \
-    .
-rm -rf "${PRIVATE_DIR}/bin"
+# Glances is pure Python and its tagged source already contains the built WebUI.
+# Copy the exact verified application tree directly; runtime libraries remain
+# distro packages.
+cp -a glances "${PRIVATE_DIR}/glances"
 find "${PRIVATE_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "${PRIVATE_DIR}" -type f -name '*.pyc' -delete
 
 PYTHONPATH="${PRIVATE_DIR}" EXPECTED_GLANCES="${GLANCES_VERSION}" python3 - <<'PY'
-import importlib.metadata
 import os
 import glances
 
-version = importlib.metadata.version("Glances")
+version = glances.__version__
 print("Glances", version)
 assert version == os.environ["EXPECTED_GLANCES"]
 assert callable(glances.main)

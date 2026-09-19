@@ -13,7 +13,7 @@ Glances is packaged for the JustVoxel AlmaLinux 10 base only.
 The package follows the normal Home Server Packages pattern:
 
 1. Verify the upstream release tag and exact commit.
-2. Install only the Glances application from that exact source into a private architecture-independent path.
+2. Copy the exact pure-Python Glances application tree, including its already-built WebUI, into a private architecture-independent path.
 3. Use AlmaLinux 10 and EPEL packages for normal Python runtime dependencies instead of bundling a second dependency tree.
 4. Build one noarch RPM.
 5. Validate that exact RPM on AlmaLinux 10 + EPEL.
