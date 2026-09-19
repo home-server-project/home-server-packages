@@ -11,6 +11,7 @@ Implemented and published package pipelines:
 - UPSide (`deviationist/cockpit-upside`)
 - Superfile (`yorukot/superfile`)
 - mergerfs (`trapexit/mergerfs`) — AlmaLinux 10 x86-64-v2 compatibility build
+- Glances (`nicolargo/glances`) — AlmaLinux 10 / JustVoxel system monitor package
 - VirtUI Manager (`aginies/virtui-manager`)
 
 Each package keeps its own independent pipeline:
@@ -36,7 +37,7 @@ The published shared stable package set is also validated together on:
 - Fedora 44
 - AlmaLinux 10 + EPEL
 
-The shared validator covers the normal `:stable` package channels. Architecture-specific compatibility packages, such as mergerfs `:stable-v2`, use their own build and validation pipeline.
+The stable-package validator resolves every published package channel. Universal packages are validated on Fedora 44 and AlmaLinux 10. AlmaLinux-specific packages are validated only on their intended AlmaLinux target, including the x86-64-v2 mergerfs channel.
 
 The shared validator does not rebuild packages. It pulls the exact published `:stable` artifacts, verifies their checksums and metadata, installs the package set together, and runs functional checks.
 
@@ -50,9 +51,10 @@ ghcr.io/home-server-project/superfile:stable
 ghcr.io/home-server-project/virtui-manager:stable
 ```
 
-Architecture-specific compatibility channel:
+AlmaLinux-specific channels:
 
 ```text
+ghcr.io/home-server-project/glances:stable
 ghcr.io/home-server-project/mergerfs:stable-v2
 ```
 

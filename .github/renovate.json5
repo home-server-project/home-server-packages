@@ -58,6 +58,20 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
+        "/^packages\\/glances\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "GLANCES_VERSION=(?<currentValue>\\S+)\\s+GLANCES_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "nicolargo/glances",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "autoReplaceStringTemplate": "GLANCES_VERSION={{{newValue}}}\\nGLANCES_COMMIT={{{newDigest}}}",
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
         "/^packages\\/virtui-manager\\/package\\.env$/",
       ],
       "matchStrings": [
@@ -94,6 +108,7 @@
         "deviationist/cockpit-upside",
         "yorukot/superfile",
         "trapexit/mergerfs",
+        "nicolargo/glances",
         "aginies/virtui-manager",
         "textual",
       ],
