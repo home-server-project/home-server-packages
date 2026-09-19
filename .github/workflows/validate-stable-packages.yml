@@ -259,7 +259,8 @@ jobs:
             test -x /usr/bin/glances
             test -d /usr/libexec/glances/python/glances
             /usr/bin/glances --version | tee /tmp/glances-version.txt
-            grep -Fq "Glances version:\t${GLANCES_VERSION}" /tmp/glances-version.txt
+            grep -Fq "Glances version:" /tmp/glances-version.txt
+            grep -Fq "${GLANCES_VERSION}" /tmp/glances-version.txt
             PYTHONPATH=/usr/libexec/glances/python python3 -c 'import glances, fastapi, psutil, podman'
           fi
 

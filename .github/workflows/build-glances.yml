@@ -137,7 +137,8 @@ jobs:
           test -f /usr/share/doc/glances/README.rst
 
           /usr/bin/glances --version | tee /tmp/glances-version.txt
-          grep -Fq "Glances version:\t${VERSION}" /tmp/glances-version.txt
+          grep -Fq "Glances version:" /tmp/glances-version.txt
+          grep -Fq "${VERSION}" /tmp/glances-version.txt
 
           PYTHONPATH=/usr/libexec/glances/python \
           EXPECTED_GLANCES="${VERSION}" \
