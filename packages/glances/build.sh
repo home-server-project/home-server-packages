@@ -147,7 +147,7 @@ for dep in \
     python3 \
     python3-dateutil \
     python3-defusedxml \
-    python3-docker \
+    python3-podman \
     python3-fastapi \
     python3-jinja2 \
     python3-packaging \

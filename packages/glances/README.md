@@ -21,7 +21,7 @@ The package follows the normal Home Server Packages pattern:
 
 The package intentionally does not carry the upstream `all` optional dependency set. JustVoxel will enable only the monitoring features it actually uses.
 
-For container monitoring, the package uses the distro `python3-docker` client. Glances supports Docker-compatible APIs, which allows JustVoxel to point it at the Podman service socket later without bundling a separate private `podman-py` dependency.
+For container monitoring, the package uses AlmaLinux's distro `python3-podman` client. Glances can therefore use its native Podman engine without bundling a private Python client.
 
 The upstream `pyinstrument` dependency is not bundled because it is used by Glances profiling/development tooling rather than the normal application/WebUI runtime. Package validation starts the real WebUI to make this omission an explicit tested condition.
 

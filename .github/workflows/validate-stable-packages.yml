@@ -260,7 +260,7 @@ jobs:
             test -d /usr/libexec/glances/python/glances
             /usr/bin/glances --version | tee /tmp/glances-version.txt
             grep -Fq "Glances version:\t${GLANCES_VERSION}" /tmp/glances-version.txt
-            PYTHONPATH=/usr/libexec/glances/python python3 -c 'import glances, fastapi, psutil, docker'
+            PYTHONPATH=/usr/libexec/glances/python python3 -c 'import glances, fastapi, psutil, podman'
           fi
 
           if find /usr/libexec/virtui-manager/python -type f -print0 \
@@ -303,7 +303,7 @@ jobs:
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-  validate-mergerfs:
+  validate_mergerfs:
     name: Validate mergerfs stable - AlmaLinux 10 x86-64-v2
     needs:
       - prepare
@@ -414,7 +414,7 @@ jobs:
     needs:
       - prepare
       - validate
-      - validate-mergerfs
+      - validate_mergerfs
     if: always()
     runs-on: ubuntu-24.04
 
@@ -426,7 +426,7 @@ jobs:
 
           prepare_result='${{ needs.prepare.result }}'
           validate_result='${{ needs.validate.result }}'
-          mergerfs_result='${{ needs.validate-mergerfs.result }}'
+          mergerfs_result='${{ needs.validate_mergerfs.result }}'
 
           {
             echo '## Home Server stable package set'

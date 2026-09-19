@@ -14,7 +14,7 @@ AutoReqProv:    no
 Requires:       python3
 Requires:       python3-dateutil
 Requires:       python3-defusedxml
-Requires:       python3-docker
+Requires:       python3-podman
 Requires:       python3-fastapi
 Requires:       python3-jinja2
 Requires:       python3-packaging
