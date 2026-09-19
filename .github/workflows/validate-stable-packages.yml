@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Resolve verified stable artifacts
+    name: Resolve stable package set
     runs-on: ubuntu-24.04
 
     steps:
@@ -88,7 +88,7 @@ jobs:
           extract_package cockpit-upside cockpit-upside
           extract_package superfile superfile
           extract_package virtui-manager virtui-manager
-          extract_package glances glances stable
+          extract_package glances glances
           extract_package mergerfs mergerfs stable-v2
 
           cat stable-set/package-set.tsv
@@ -99,11 +99,9 @@ jobs:
           {
             echo '## Stable package snapshot'
             echo
-            echo '```text'
             column -t -s $'\t' stable-set/package-set.tsv
-            echo '```'
             echo
-            echo 'All files covered by each published SHA256SUMS manifest were verified before validation.'
+            echo 'All published package files covered by SHA256SUMS were verified before OS validation.'
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload exact stable package set
@@ -114,41 +112,19 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  validate:
-    name: Validate stable package set - ${{ matrix.display_name }}
+  validate_fedora:
+    name: Validate Fedora 44
     needs:
       - prepare
     runs-on: ubuntu-24.04
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: fedora44
-            display_name: Fedora 44
-            container: registry.fedoraproject.org/fedora:44
-          - id: el10
-            display_name: AlmaLinux 10
-            container: almalinux:10
-
     container:
-      image: ${{ matrix.container }}
+      image: registry.fedoraproject.org/fedora:44
 
     steps:
-      - name: Prepare validation repositories and tools
+      - name: Prepare validation tools
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ "${{ matrix.id }}" == "el10" ]]; then
-            if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
-              echo 'ERROR: AlmaLinux CRB repository is not enabled.' >&2
-              exit 1
-            fi
-
-            dnf install -y epel-release
-          fi
-
           dnf install -y rpm file
           dnf clean all
 
@@ -158,12 +134,11 @@ jobs:
           name: stable-package-set
           path: stable-set
 
-      - name: Reverify published package artifacts
+      - name: Reverify Fedora package artifacts
         shell: bash
         run: |
           set -euo pipefail
-
-          for package in cockpit-upside superfile virtui-manager glances mergerfs; do
+          for package in cockpit-upside superfile virtui-manager; do
             (
               cd "stable-set/${package}"
               sha256sum -c metadata/SHA256SUMS
@@ -171,7 +146,7 @@ jobs:
             )
           done
 
-      - name: Install stable package set together
+      - name: Install Fedora package set together
         shell: bash
         run: |
           set -euo pipefail
@@ -179,23 +154,17 @@ jobs:
           UPSIDE_RPM="$(find stable-set/cockpit-upside/rpms -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -print -quit)"
           SUPERFILE_RPM="$(find stable-set/superfile/rpms -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
           VIRTUI_RPM="$(find stable-set/virtui-manager/rpms -maxdepth 1 -type f -name 'virtui-manager-*.noarch.rpm' -print -quit)"
-          GLANCES_RPM="$(find stable-set/glances/rpms -maxdepth 1 -type f -name 'glances-*.noarch.rpm' -print -quit)"
 
           test -n "${UPSIDE_RPM}"
           test -n "${SUPERFILE_RPM}"
           test -n "${VIRTUI_RPM}"
-          test -n "${GLANCES_RPM}"
 
           dnf install -y \
             "${UPSIDE_RPM}" \
             "${SUPERFILE_RPM}" \
             "${VIRTUI_RPM}"
 
-          if [[ "${{ matrix.id }}" == "el10" ]]; then
-            dnf install -y "${GLANCES_RPM}"
-          fi
-
-      - name: Validate installed stable package set
+      - name: Validate Fedora package set
         shell: bash
         run: |
           set -euo pipefail
@@ -207,11 +176,6 @@ jobs:
           source stable-set/virtui-manager/metadata/package.env
           VIRTUI_VERSION="${VERSION}"
           VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
-
-          if [[ "${{ matrix.id }}" == "el10" ]]; then
-            source stable-set/glances/metadata/package.env
-            GLANCES_VERSION="${VERSION}"
-          fi
 
           rpm -q cockpit-upside superfile virtui-manager
 
@@ -254,16 +218,6 @@ jobs:
 
           /usr/bin/vmc --help >/dev/null
 
-          if [[ "${{ matrix.id }}" == "el10" ]]; then
-            rpm -q glances
-            test -x /usr/bin/glances
-            test -d /usr/libexec/glances/python/glances
-            /usr/bin/glances --version | tee /tmp/glances-version.txt
-            grep -Fq "Glances version:" /tmp/glances-version.txt
-            grep -Fq "${GLANCES_VERSION}" /tmp/glances-version.txt
-            PYTHONPATH=/usr/libexec/glances/python python3 -c 'import glances, fastapi, psutil, podman'
-          fi
-
           if find /usr/libexec/virtui-manager/python -type f -print0 \
               | xargs -0 file | grep -q 'ELF'; then
             echo 'ERROR: installed private VirtUI Python tree contains an ELF file' >&2
@@ -274,44 +228,31 @@ jobs:
           rpm -V superfile
           rpm -V virtui-manager
 
-          if [[ "${{ matrix.id }}" == "el10" ]]; then
-            rpm -V glances
-            printf 'Validated stable set on %s: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s, Glances %s\n' \
-              "${{ matrix.display_name }}" \
-              "${UPSIDE_VERSION}" \
-              "${SUPERFILE_VERSION}" \
-              "${VIRTUI_VERSION}" \
-              "${VIRTUI_TEXTUAL_VERSION}" \
-              "${GLANCES_VERSION}"
-          else
-            printf 'Validated stable set on %s: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s\n' \
-              "${{ matrix.display_name }}" \
-              "${UPSIDE_VERSION}" \
-              "${SUPERFILE_VERSION}" \
-              "${VIRTUI_VERSION}" \
-              "${VIRTUI_TEXTUAL_VERSION}"
-          fi
+          printf 'Validated Fedora 44: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s\n' \
+            "${UPSIDE_VERSION}" \
+            "${SUPERFILE_VERSION}" \
+            "${VIRTUI_VERSION}" \
+            "${VIRTUI_TEXTUAL_VERSION}"
 
       - name: Validation summary
         if: always()
         shell: bash
         run: |
           {
-            echo '## ${{ matrix.display_name }} stable package set'
+            echo '## Fedora 44 stable package set'
             echo
-            echo '- Package source: published GHCR `:stable` artifacts'
-            echo '- Universal packages are installed together; AlmaLinux also installs Glances'
+            echo '- Packages: UPSide, Superfile, VirtUI Manager'
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-  validate_mergerfs:
-    name: Validate mergerfs stable - AlmaLinux 10 x86-64-v2
+  validate_alma:
+    name: Validate AlmaLinux 10
     needs:
       - prepare
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Install validation container tools
+      - name: Install AlmaLinux validation container tools
         shell: bash
         run: |
           set -euo pipefail
@@ -324,21 +265,134 @@ jobs:
           name: stable-package-set
           path: stable-set
 
-      - name: Resolve AlmaLinux x86-64-v2 validation image
+      - name: Resolve AlmaLinux validation images
         shell: bash
         env:
-          ALMA_IMAGE: quay.io/almalinuxorg/10-base:10
+          ALMA_STANDARD_IMAGE: docker.io/library/almalinux:10
+          ALMA_V2_IMAGE: quay.io/almalinuxorg/10-base:10
         run: |
           set -euo pipefail
-          digest="$(skopeo inspect \
+
+          standard_digest="$(skopeo inspect \
+            --override-arch amd64 \
+            --format '{{.Digest}}' \
+            "docker://${ALMA_STANDARD_IMAGE}")"
+          [[ "${standard_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          v2_digest="$(skopeo inspect \
             --override-arch amd64 \
             --override-variant v2 \
             --format '{{.Digest}}' \
-            "docker://${ALMA_IMAGE}")"
-          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "ALMA_REF=${ALMA_IMAGE%:*}@${digest}" >> "${GITHUB_ENV}"
+            "docker://${ALMA_V2_IMAGE}")"
+          [[ "${v2_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
 
-      - name: Validate published mergerfs RPM
+          echo "ALMA_STANDARD_REF=${ALMA_STANDARD_IMAGE%:*}@${standard_digest}" >> "${GITHUB_ENV}"
+          echo "ALMA_V2_REF=${ALMA_V2_IMAGE%:*}@${v2_digest}" >> "${GITHUB_ENV}"
+
+      - name: Validate AlmaLinux package set
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo podman run --rm \
+            --platform linux/amd64 \
+            -v "${GITHUB_WORKSPACE}/stable-set:/stable-set:ro" \
+            "${ALMA_STANDARD_REF}" \
+            /bin/bash -lc '
+              set -euo pipefail
+
+              if ! dnf repolist --enabled | grep -Eiq "(^|[[:space:]])crb([[:space:]]|$)"; then
+                echo "ERROR: AlmaLinux CRB repository is not enabled." >&2
+                exit 1
+              fi
+
+              dnf install -y epel-release
+              dnf install -y rpm file
+              dnf clean all
+
+              for package in cockpit-upside superfile virtui-manager glances; do
+                (
+                  cd "/stable-set/${package}"
+                  sha256sum -c metadata/SHA256SUMS
+                  sha256sum -c metadata/rpm-sha256.txt
+                )
+              done
+
+              UPSIDE_RPM="$(find /stable-set/cockpit-upside/rpms -maxdepth 1 -type f -name "cockpit-upside-*.noarch.rpm" -print -quit)"
+              SUPERFILE_RPM="$(find /stable-set/superfile/rpms -maxdepth 1 -type f -name "superfile-*.x86_64.rpm" -print -quit)"
+              VIRTUI_RPM="$(find /stable-set/virtui-manager/rpms -maxdepth 1 -type f -name "virtui-manager-*.noarch.rpm" -print -quit)"
+              GLANCES_RPM="$(find /stable-set/glances/rpms -maxdepth 1 -type f -name "glances-*.noarch.rpm" -print -quit)"
+
+              test -n "${UPSIDE_RPM}"
+              test -n "${SUPERFILE_RPM}"
+              test -n "${VIRTUI_RPM}"
+              test -n "${GLANCES_RPM}"
+
+              dnf install -y \
+                "${UPSIDE_RPM}" \
+                "${SUPERFILE_RPM}" \
+                "${VIRTUI_RPM}" \
+                "${GLANCES_RPM}"
+
+              source /stable-set/cockpit-upside/metadata/package.env
+              UPSIDE_VERSION="${VERSION}"
+              source /stable-set/superfile/metadata/package.env
+              SUPERFILE_VERSION="${VERSION}"
+              source /stable-set/virtui-manager/metadata/package.env
+              VIRTUI_VERSION="${VERSION}"
+              VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
+              source /stable-set/glances/metadata/package.env
+              GLANCES_VERSION="${VERSION}"
+
+              rpm -q cockpit-upside superfile virtui-manager glances
+
+              test -f /usr/share/cockpit/upside/manifest.json
+              test -f /usr/share/licenses/cockpit-upside/LICENSE
+
+              test -x /usr/bin/spf
+              /usr/bin/spf --version | tee /tmp/spf-version.txt
+              grep -Fq "v${SUPERFILE_VERSION}" /tmp/spf-version.txt
+              /usr/bin/spf --help >/dev/null
+
+              test -x /usr/bin/virtui-manager
+              test -x /usr/bin/vmc
+              test -L /usr/bin/virtui-manager-cmd
+              test -d /usr/libexec/virtui-manager/python
+
+              PYTHONPATH=/usr/libexec/virtui-manager/python \
+              EXPECTED_VIRTUI="${VIRTUI_VERSION}" \
+              EXPECTED_TEXTUAL="${VIRTUI_TEXTUAL_VERSION}" \
+              python3 -c "import importlib.metadata, os, gi, libvirt, markdown_it, netifaces, packaging, requests, textual, yaml; import vmanager.wrapper; virtui=importlib.metadata.version('virtui-manager'); textual_version=importlib.metadata.version('textual'); print('VirtUI Manager', virtui); print('Textual', textual_version); assert virtui == os.environ['EXPECTED_VIRTUI']; assert textual_version == os.environ['EXPECTED_TEXTUAL']"
+
+              /usr/bin/vmc --help >/dev/null
+
+              test -x /usr/bin/glances
+              test -d /usr/libexec/glances/python/glances
+              /usr/bin/glances --version | tee /tmp/glances-version.txt
+              grep -Fq "Glances version:" /tmp/glances-version.txt
+              grep -Fq "${GLANCES_VERSION}" /tmp/glances-version.txt
+              PYTHONPATH=/usr/libexec/glances/python python3 -c "import glances, fastapi, psutil, podman"
+
+              if find /usr/libexec/virtui-manager/python -type f -print0 \
+                  | xargs -0 file | grep -q "ELF"; then
+                echo "ERROR: installed private VirtUI Python tree contains an ELF file" >&2
+                exit 1
+              fi
+
+              rpm -V cockpit-upside
+              rpm -V superfile
+              rpm -V virtui-manager
+              rpm -V glances
+
+              printf "Validated AlmaLinux 10: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s, Glances %s\n" \
+                "${UPSIDE_VERSION}" \
+                "${SUPERFILE_VERSION}" \
+                "${VIRTUI_VERSION}" \
+                "${VIRTUI_TEXTUAL_VERSION}" \
+                "${GLANCES_VERSION}"
+            '
+
+      - name: Validate mergerfs x86-64-v2
         shell: bash
         run: |
           set -euo pipefail
@@ -346,8 +400,8 @@ jobs:
           sudo podman run --rm --privileged \
             --platform linux/amd64/v2 \
             --device /dev/fuse \
-            -v "${GITHUB_WORKSPACE}/stable-set:/stable-set" \
-            "${ALMA_REF}" \
+            -v "${GITHUB_WORKSPACE}/stable-set:/stable-set:ro" \
+            "${ALMA_V2_REF}" \
             /bin/bash -lc '
               set -euo pipefail
 
@@ -410,36 +464,14 @@ jobs:
               rpm -V mergerfs
             '
 
-  result:
-    name: Stable package set healthy
-    needs:
-      - prepare
-      - validate
-      - validate_mergerfs
-    if: always()
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Aggregate validation result
+      - name: Validation summary
+        if: always()
         shell: bash
         run: |
-          set -euo pipefail
-
-          prepare_result='${{ needs.prepare.result }}'
-          validate_result='${{ needs.validate.result }}'
-          mergerfs_result='${{ needs.validate_mergerfs.result }}'
-
           {
-            echo '## Home Server stable package set'
+            echo '## AlmaLinux 10 stable package set'
             echo
-            echo "- Artifact resolution and checksum verification: ${prepare_result}"
-            echo "- Fedora 44 + AlmaLinux 10 set validation: ${validate_result}"
-            echo "- AlmaLinux 10 x86-64-v2 mergerfs validation: ${mergerfs_result}"
+            echo '- Packages: UPSide, Superfile, VirtUI Manager, Glances'
+            echo '- Compatibility package: mergerfs x86-64-v2 with FUSE functional test'
+            echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
-
-          if [[ "${prepare_result}" != 'success' || "${validate_result}" != 'success' || "${mergerfs_result}" != 'success' ]]; then
-            echo 'ERROR: stable package set is not healthy.' >&2
-            exit 1
-          fi
-
-          echo 'Stable package set is healthy.'

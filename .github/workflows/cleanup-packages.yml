@@ -1,0 +1,179 @@
+---
+name: Cleanup old package versions
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Show cleanup decisions without deleting package versions
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    # Sunday 04:15 UTC. Keep cleanup separate from Friday validation/build activity.
+    - cron: '15 4 * * 0'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: package-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Cleanup GHCR package history
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Apply package retention policy
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANUAL_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          packages=(
+            cockpit-upside
+            superfile
+            virtui-manager
+            glances
+            mergerfs
+          )
+
+          retention_days=45
+          minimum_releases=7
+          cutoff_epoch="$(date -u -d "${retention_days} days ago" +%s)"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${MANUAL_DRY_RUN}" == "true" ]]; then
+            dry_run=true
+          else
+            dry_run=false
+          fi
+
+          {
+            echo '## GHCR package cleanup'
+            echo
+            echo "- Retention age: ${retention_days} days"
+            echo "- Minimum tagged releases kept per package: ${minimum_releases}"
+            echo "- Protected tags: stable, stable-v2"
+            echo "- Dry run: ${dry_run}"
+            echo
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          for package in "${packages[@]}"; do
+            echo "=== ${package} ==="
+
+            versions="$(gh api \
+              --paginate \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}/versions?per_page=100" \
+              | jq -cs 'add // []')"
+            version_count="$(jq 'length' <<<"${versions}")"
+
+            if [[ "${version_count}" -eq 0 ]]; then
+              echo "No versions found."
+              {
+                echo "### ${package}"
+                echo
+                echo '- No package versions found.'
+                echo
+              } >> "${GITHUB_STEP_SUMMARY}"
+              continue
+            fi
+
+            mapfile -t newest_release_ids < <(
+              jq -r \
+                --argjson minimum "${minimum_releases}" \
+                '[
+                  .[]
+                  | select(
+                      (.metadata.container.tags // [])
+                      | map(select(. != "stable" and . != "stable-v2"))
+                      | length > 0
+                    )
+                ]
+                | sort_by(.created_at)
+                | reverse
+                | .[:$minimum]
+                | .[].id' \
+                <<<"${versions}"
+            )
+
+            declare -A newest_release=()
+            for id in "${newest_release_ids[@]}"; do
+              newest_release["${id}"]=1
+            done
+
+            kept=0
+            deleted=0
+
+            while IFS=$'\t' read -r id created_at tags; do
+              [[ -n "${id}" ]] || continue
+
+              reason=
+              created_epoch="$(date -u -d "${created_at}" +%s)"
+
+              if [[ ",${tags}," == *,stable,* || ",${tags}," == *,stable-v2,* ]]; then
+                reason="protected stable tag"
+              elif [[ -n "${newest_release[$id]+x}" ]]; then
+                reason="newest ${minimum_releases} tagged releases"
+              elif [[ "${created_epoch}" -ge "${cutoff_epoch}" ]]; then
+                reason="younger than ${retention_days} days"
+              fi
+
+              display_tags="${tags:-<untagged>}"
+
+              if [[ -n "${reason}" ]]; then
+                printf 'KEEP   id=%s created=%s tags=%s reason=%s\n' \
+                  "${id}" "${created_at}" "${display_tags}" "${reason}"
+                kept=$((kept + 1))
+                continue
+              fi
+
+              if [[ "${dry_run}" == "true" ]]; then
+                printf 'DELETE id=%s created=%s tags=%s reason=expired (dry run)\n' \
+                  "${id}" "${created_at}" "${display_tags}"
+              else
+                printf 'DELETE id=%s created=%s tags=%s reason=expired\n' \
+                  "${id}" "${created_at}" "${display_tags}"
+                gh api \
+                  --method DELETE \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}/versions/${id}"
+              fi
+
+              deleted=$((deleted + 1))
+            done < <(
+              jq -r '
+                sort_by(.created_at)
+                | reverse
+                | .[]
+                | [
+                    (.id | tostring),
+                    .created_at,
+                    ((.metadata.container.tags // []) | join(","))
+                  ]
+                | @tsv' \
+                <<<"${versions}"
+            )
+
+            {
+              echo "### ${package}"
+              echo
+              echo "- Total versions inspected: ${version_count}"
+              echo "- Kept: ${kept}"
+              if [[ "${dry_run}" == "true" ]]; then
+                echo "- Would delete: ${deleted}"
+              else
+                echo "- Deleted: ${deleted}"
+              fi
+              echo
+            } >> "${GITHUB_STEP_SUMMARY}"
+
+            unset newest_release
+          done
