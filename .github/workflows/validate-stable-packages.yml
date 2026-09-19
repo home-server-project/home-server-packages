@@ -6,11 +6,6 @@ on:
   schedule:
     # Friday 22:45 UTC: 5h before Gina and 6h35 before Rose weekly builds.
     - cron: '45 22 * * 5'
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/validate-stable-packages.yml'
 
 permissions:
   contents: read
@@ -49,7 +44,8 @@ jobs:
           extract_package() {
             local package="$1"
             local expected_package="$2"
-            local image="${registry}/${package}:stable"
+            local channel="${3:-stable}"
+            local image="${registry}/${package}:${channel}"
             local dest="stable-set/${package}"
             local cid
             local digest
@@ -92,6 +88,8 @@ jobs:
           extract_package cockpit-upside cockpit-upside
           extract_package superfile superfile
           extract_package virtui-manager virtui-manager
+          extract_package glances glances stable
+          extract_package mergerfs mergerfs stable-v2
 
           cat stable-set/package-set.tsv
 
@@ -165,7 +163,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for package in cockpit-upside superfile virtui-manager; do
+          for package in cockpit-upside superfile virtui-manager glances mergerfs; do
             (
               cd "stable-set/${package}"
               sha256sum -c metadata/SHA256SUMS
@@ -181,15 +179,21 @@ jobs:
           UPSIDE_RPM="$(find stable-set/cockpit-upside/rpms -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -print -quit)"
           SUPERFILE_RPM="$(find stable-set/superfile/rpms -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
           VIRTUI_RPM="$(find stable-set/virtui-manager/rpms -maxdepth 1 -type f -name 'virtui-manager-*.noarch.rpm' -print -quit)"
+          GLANCES_RPM="$(find stable-set/glances/rpms -maxdepth 1 -type f -name 'glances-*.noarch.rpm' -print -quit)"
 
           test -n "${UPSIDE_RPM}"
           test -n "${SUPERFILE_RPM}"
           test -n "${VIRTUI_RPM}"
+          test -n "${GLANCES_RPM}"
 
           dnf install -y \
             "${UPSIDE_RPM}" \
             "${SUPERFILE_RPM}" \
             "${VIRTUI_RPM}"
+
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            dnf install -y "${GLANCES_RPM}"
+          fi
 
       - name: Validate installed stable package set
         shell: bash
@@ -203,6 +207,11 @@ jobs:
           source stable-set/virtui-manager/metadata/package.env
           VIRTUI_VERSION="${VERSION}"
           VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
+
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            source stable-set/glances/metadata/package.env
+            GLANCES_VERSION="${VERSION}"
+          fi
 
           rpm -q cockpit-upside superfile virtui-manager
 
@@ -245,6 +254,15 @@ jobs:
 
           /usr/bin/vmc --help >/dev/null
 
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            rpm -q glances
+            test -x /usr/bin/glances
+            test -d /usr/libexec/glances/python/glances
+            /usr/bin/glances --version | tee /tmp/glances-version.txt
+            grep -Fq "Glances version:\t${GLANCES_VERSION}" /tmp/glances-version.txt
+            PYTHONPATH=/usr/libexec/glances/python python3 -c 'import glances, fastapi, psutil, docker'
+          fi
+
           if find /usr/libexec/virtui-manager/python -type f -print0 \
               | xargs -0 file | grep -q 'ELF'; then
             echo 'ERROR: installed private VirtUI Python tree contains an ELF file' >&2
@@ -255,12 +273,23 @@ jobs:
           rpm -V superfile
           rpm -V virtui-manager
 
-          printf 'Validated stable set on %s: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s\n' \
-            "${{ matrix.display_name }}" \
-            "${UPSIDE_VERSION}" \
-            "${SUPERFILE_VERSION}" \
-            "${VIRTUI_VERSION}" \
-            "${VIRTUI_TEXTUAL_VERSION}"
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            rpm -V glances
+            printf 'Validated stable set on %s: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s, Glances %s\n' \
+              "${{ matrix.display_name }}" \
+              "${UPSIDE_VERSION}" \
+              "${SUPERFILE_VERSION}" \
+              "${VIRTUI_VERSION}" \
+              "${VIRTUI_TEXTUAL_VERSION}" \
+              "${GLANCES_VERSION}"
+          else
+            printf 'Validated stable set on %s: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s\n' \
+              "${{ matrix.display_name }}" \
+              "${UPSIDE_VERSION}" \
+              "${SUPERFILE_VERSION}" \
+              "${VIRTUI_VERSION}" \
+              "${VIRTUI_TEXTUAL_VERSION}"
+          fi
 
       - name: Validation summary
         if: always()
@@ -270,15 +299,122 @@ jobs:
             echo '## ${{ matrix.display_name }} stable package set'
             echo
             echo '- Package source: published GHCR `:stable` artifacts'
-            echo '- Installation mode: all three RPMs in one DNF transaction'
+            echo '- Universal packages are installed together; AlmaLinux also installs Glances'
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
+
+  validate-mergerfs:
+    name: Validate mergerfs stable - AlmaLinux 10 x86-64-v2
+    needs:
+      - prepare
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Install validation container tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman skopeo
+
+      - name: Download exact stable package set
+        uses: actions/download-artifact@v7
+        with:
+          name: stable-package-set
+          path: stable-set
+
+      - name: Resolve AlmaLinux x86-64-v2 validation image
+        shell: bash
+        env:
+          ALMA_IMAGE: quay.io/almalinuxorg/10-base:10
+        run: |
+          set -euo pipefail
+          digest="$(skopeo inspect \
+            --override-arch amd64 \
+            --override-variant v2 \
+            --format '{{.Digest}}' \
+            "docker://${ALMA_IMAGE}")"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "ALMA_REF=${ALMA_IMAGE%:*}@${digest}" >> "${GITHUB_ENV}"
+
+      - name: Validate published mergerfs RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo podman run --rm --privileged \
+            --platform linux/amd64/v2 \
+            --device /dev/fuse \
+            -v "${GITHUB_WORKSPACE}/stable-set:/stable-set" \
+            "${ALMA_REF}" \
+            /bin/bash -lc '
+              set -euo pipefail
+
+              dnf install -y fuse3 rpm util-linux
+              dnf clean all
+
+              (
+                cd /stable-set/mergerfs
+                sha256sum -c metadata/SHA256SUMS
+                sha256sum -c metadata/rpm-sha256.txt
+              )
+
+              source /stable-set/mergerfs/metadata/package.env
+              [[ "${PACKAGE}" == "mergerfs" ]]
+              [[ "${PACKAGE_CHANNEL}" == "el10-x86_64_v2" ]]
+              [[ "${RPM_ARCH}" == "x86_64_v2" ]]
+
+              RPM_FILE="$(find /stable-set/mergerfs/rpms -maxdepth 1 -type f -name "mergerfs-*.x86_64_v2.rpm" -print -quit)"
+              test -n "${RPM_FILE}"
+
+              dnf install -y "${RPM_FILE}"
+              rpm -q mergerfs
+              rpm -q --qf "%{ARCH}\n" mergerfs | grep -Fqx "x86_64_v2"
+              /usr/bin/mergerfs --version | grep -Fq "${VERSION}"
+
+              test_root="$(mktemp -d)"
+              mkdir -p "${test_root}/a" "${test_root}/b" "${test_root}/pool"
+              printf "branch-a\n" > "${test_root}/a/a.txt"
+              printf "branch-b\n" > "${test_root}/b/b.txt"
+
+              cleanup() {
+                if mountpoint -q "${test_root}/pool"; then
+                  umount "${test_root}/pool" || true
+                fi
+                rm -rf "${test_root}"
+              }
+              trap cleanup EXIT
+
+              /usr/bin/mergerfs -f "${test_root}/a:${test_root}/b" "${test_root}/pool" &
+              mergerfs_pid=$!
+
+              mounted=0
+              for _ in $(seq 1 20); do
+                if mountpoint -q "${test_root}/pool"; then
+                  mounted=1
+                  break
+                fi
+                sleep 0.25
+              done
+
+              [[ "${mounted}" -eq 1 ]]
+              grep -Fqx "branch-a" "${test_root}/pool/a.txt"
+              grep -Fqx "branch-b" "${test_root}/pool/b.txt"
+
+              umount "${test_root}/pool"
+              wait "${mergerfs_pid}" >/dev/null 2>&1 || true
+              trap - EXIT
+              rm -rf "${test_root}"
+
+              rpm -V mergerfs
+            '
 
   result:
     name: Stable package set healthy
     needs:
       - prepare
       - validate
+      - validate-mergerfs
     if: always()
     runs-on: ubuntu-24.04
 
@@ -290,15 +426,17 @@ jobs:
 
           prepare_result='${{ needs.prepare.result }}'
           validate_result='${{ needs.validate.result }}'
+          mergerfs_result='${{ needs.validate-mergerfs.result }}'
 
           {
             echo '## Home Server stable package set'
             echo
             echo "- Artifact resolution and checksum verification: ${prepare_result}"
             echo "- Fedora 44 + AlmaLinux 10 set validation: ${validate_result}"
+            echo "- AlmaLinux 10 x86-64-v2 mergerfs validation: ${mergerfs_result}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          if [[ "${prepare_result}" != 'success' || "${validate_result}" != 'success' ]]; then
+          if [[ "${prepare_result}" != 'success' || "${validate_result}" != 'success' || "${mergerfs_result}" != 'success' ]]; then
             echo 'ERROR: stable package set is not healthy.' >&2
             exit 1
           fi

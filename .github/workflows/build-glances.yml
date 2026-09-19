@@ -1,0 +1,292 @@
+---
+name: Build Glances package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/glances/**'
+      - '.github/workflows/build-glances.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/glances/**'
+      - '.github/workflows/build-glances.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glances-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Glances RPM
+    runs-on: ubuntu-24.04
+    container:
+      image: almalinux:10
+
+    steps:
+      - name: Prepare AlmaLinux build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
+            echo 'ERROR: AlmaLinux CRB repository is not enabled.' >&2
+            exit 1
+          fi
+
+          dnf install -y epel-release
+          dnf install -y \
+            file \
+            git \
+            gzip \
+            python3 \
+            python3-dateutil \
+            python3-defusedxml \
+            python3-docker \
+            python3-fastapi \
+            python3-jinja2 \
+            python3-packaging \
+            python3-pip \
+            python3-psutil \
+            python3-requests \
+            python3-setuptools \
+            python3-shtab \
+            python3-uvicorn \
+            python3-wheel \
+            rpm-build \
+            tar
+          dnf clean all
+
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Build and test Glances RPM
+        shell: bash
+        run: |
+          bash packages/glances/build.sh
+
+      - name: Upload Glances RPM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: glances-noarch
+          path: out/glances/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate Glances - AlmaLinux 10
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+    container:
+      image: almalinux:10
+
+    steps:
+      - name: Prepare AlmaLinux validation environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
+            echo 'ERROR: AlmaLinux CRB repository is not enabled.' >&2
+            exit 1
+          fi
+
+          dnf install -y epel-release
+          dnf install -y curl file rpm
+          dnf clean all
+
+      - name: Download exact Glances RPM artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: glances-noarch
+          path: package
+
+      - name: Verify, install, and exercise exact RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          (
+            cd package
+            cat metadata/rpm-sha256.txt
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+          RPM_FILE="$(find package/rpms -maxdepth 1 -type f -name 'glances-*.noarch.rpm' -print -quit)"
+          test -n "${RPM_FILE}"
+
+          source package/metadata/package.env
+          [[ "${PACKAGE}" == "glances" ]]
+          [[ "${PACKAGE_CHANNEL}" == "el10-noarch" ]]
+
+          dnf install -y "${RPM_FILE}"
+
+          rpm -q glances
+          test -x /usr/bin/glances
+          test -d /usr/libexec/glances/python/glances
+          test -d /usr/libexec/glances/python/glances/outputs/static
+          test -f /usr/share/licenses/glances/COPYING
+          test -f /usr/share/doc/glances/README.rst
+
+          /usr/bin/glances --version | tee /tmp/glances-version.txt
+          grep -Fq "Glances version:\t${VERSION}" /tmp/glances-version.txt
+
+          PYTHONPATH=/usr/libexec/glances/python \
+          EXPECTED_GLANCES="${VERSION}" \
+          python3 - <<'PY'
+          import importlib.metadata
+          import os
+
+          import defusedxml
+          import docker
+          import fastapi
+          import glances
+          import jinja2
+          import packaging
+          import psutil
+          import requests
+          import shtab
+          import uvicorn
+
+          version = importlib.metadata.version("Glances")
+          print("Glances", version)
+          assert version == os.environ["EXPECTED_GLANCES"]
+          assert callable(glances.main)
+          PY
+
+          # pyinstrument is intentionally not shipped. Normal Glances execution
+          # and WebUI operation must remain functional without the profiler.
+          if PYTHONPATH=/usr/libexec/glances/python python3 -c 'import pyinstrument' 2>/dev/null; then
+            echo 'ERROR: pyinstrument unexpectedly present in the Glances runtime' >&2
+            exit 1
+          fi
+
+          /usr/bin/glances -w --bind 127.0.0.1 --port 61208 >/tmp/glances-web.log 2>&1 &
+          glances_pid=$!
+          cleanup() {
+            kill "${glances_pid}" >/dev/null 2>&1 || true
+            wait "${glances_pid}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:61208/ >/tmp/glances-index.html; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ "${ready}" -ne 1 ]]; then
+            echo 'ERROR: Glances WebUI did not become ready' >&2
+            cat /tmp/glances-web.log >&2
+            exit 1
+          fi
+
+          grep -Eiq '<html|glances' /tmp/glances-index.html
+          curl -fsS http://127.0.0.1:61208/api/4/all >/tmp/glances-all.json
+          test -s /tmp/glances-all.json
+
+          cleanup
+          trap - EXIT
+
+          rpm -V glances
+
+          mkdir -p package/validation/el10
+          cat /etc/os-release > package/validation/el10/os-release.txt
+          rpm -q glances > package/validation/el10/glances.txt
+          rpm -q --qf '%{ARCH}\n' glances > package/validation/el10/rpm-arch.txt
+          rpm -q --qf '%{SIZE}\n' glances > package/validation/el10/rpm-installed-size.txt
+          cp /tmp/glances-version.txt package/validation/el10/glances-version.txt
+          cp /tmp/glances-all.json package/validation/el10/glances-all.json
+          sha256sum "${RPM_FILE}" > package/validation/el10/rpm-sha256.txt
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: glances-validation-el10
+          path: package/validation/el10/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified Glances artifact
+    needs:
+      - build
+      - validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download validated package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: glances-noarch
+          path: package
+
+      - name: Read package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source package/metadata/package.env
+
+          echo "GLANCES_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "GLANCES_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/glances" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF_CONTAINER
+          FROM scratch
+          LABEL org.opencontainers.image.title="glances package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project Glances AlmaLinux 10 RPM, source, license, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${GLANCES_VERSION}" \
+                io.home-server-project.package="glances" \
+                io.home-server-project.upstream-commit="${GLANCES_COMMIT}" \
+                io.home-server-project.channel="el10-noarch"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF_CONTAINER
+
+          docker build \
+            --file package/Containerfile \
+            --tag "${PACKAGE_IMAGE}:${GLANCES_VERSION}-1.hsp" \
+            --tag "${PACKAGE_IMAGE}:stable" \
+            package
+
+      - name: Publish immutable and stable tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${GLANCES_VERSION}-1.hsp"
+          docker push "${PACKAGE_IMAGE}:stable"

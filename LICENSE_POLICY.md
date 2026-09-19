@@ -44,3 +44,12 @@ Upstream: `https://github.com/trapexit/mergerfs`
 Declared license: `ISC`.
 
 The RPM build must preserve the upstream `LICENSE` text. The exact upstream source and Home Server Project packaging recipe used for every x86-64-v2 mergerfs RPM are retained with the published artifact. The x86-64-v2 build must pass package and functional FUSE validation before publication.
+
+
+## Glances
+
+Upstream: `https://github.com/nicolargo/glances`
+
+Declared license: `LGPL-3.0-only`.
+
+The RPM build must preserve the upstream `COPYING` license text and retain the exact corresponding upstream source used for every published Glances RPM. Glances is packaged as an AlmaLinux 10 target package; normal runtime Python libraries come from AlmaLinux 10 and EPEL rather than a bundled dependency tree.
