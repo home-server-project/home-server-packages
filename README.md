@@ -1,8 +1,8 @@
 # Home Server Packages
 
-Central third-party package build, validation, and publication repository for the Home Server Project.
+Central shared package build, validation, and publication repository for the Home Server Project.
 
-This repository builds software that is not consumed directly from the Fedora or AlmaLinux repositories but is required by Home Server Project images. Each package keeps its upstream source, license, build, test, and publication handling isolated from the operating-system image repositories.
+This repository builds first-party and third-party software that is not consumed directly from the Fedora or AlmaLinux repositories but is required by Home Server Project images. Each package keeps its upstream source, license, build, test, and publication handling isolated from the operating-system image repositories.
 
 ## Packages
 
@@ -13,6 +13,7 @@ Implemented and published package pipelines:
 - mergerfs (`trapexit/mergerfs`) — AlmaLinux 10 x86-64-v2 compatibility build
 - Glances (`nicolargo/glances`) — AlmaLinux 10 / JustVoxel system monitor package
 - VirtUI Manager (`aginies/virtui-manager`)
+- NetworkManager-HSP (`home-server-project/nm-hsp`) — x86_64 + aarch64
 
 Each package keeps its own independent pipeline:
 
@@ -49,6 +50,7 @@ Current shared stable artifact channels:
 ghcr.io/home-server-project/cockpit-upside:stable
 ghcr.io/home-server-project/superfile:stable
 ghcr.io/home-server-project/virtui-manager:stable
+ghcr.io/home-server-project/nm-hsp:stable
 ```
 
 AlmaLinux-specific channels:
@@ -70,7 +72,7 @@ The shared stable-package validation then checks the already-published package s
 
 ## Consumers
 
-Gina and Rose are intended to consume these verified packages instead of rebuilding the same third-party software from source inside their own image builds.
+Gina, Rose, JustVoxel, and other Home Server Project products are intended to consume these verified packages instead of rebuilding shared software from source inside their own image builds.
 
 This keeps responsibilities separate:
 

@@ -53,3 +53,12 @@ Upstream: `https://github.com/nicolargo/glances`
 Declared license: `LGPL-3.0-only`.
 
 The RPM build must preserve the upstream `COPYING` license text and retain the exact corresponding upstream source used for every published Glances RPM. Glances is packaged as an AlmaLinux 10 target package; normal runtime Python libraries come from AlmaLinux 10 and EPEL rather than a bundled dependency tree.
+
+
+## NetworkManager-HSP
+
+Upstream: `https://github.com/home-server-project/nm-hsp`
+
+Declared license: `Apache-2.0`.
+
+NetworkManager-HSP is a first-party Home Server Project package. The RPM build preserves the project `LICENSE` file and retains the exact source commit used for every published binary. x86_64 and aarch64 RPMs are built from the same pinned source commit and each architecture must pass Fedora 44 and AlmaLinux 10 validation before publication.

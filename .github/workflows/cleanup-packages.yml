@@ -41,6 +41,7 @@ jobs:
             virtui-manager
             glances
             mergerfs
+            nm-hsp
           )
 
           retention_days=45
