@@ -87,6 +87,7 @@ jobs:
 
           extract_package cockpit-upside cockpit-upside
           extract_package superfile superfile
+          extract_package nm-hsp nm-hsp
           extract_package virtui-manager virtui-manager
           extract_package glances glances
           extract_package mergerfs mergerfs stable-v2
@@ -138,7 +139,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for package in cockpit-upside superfile virtui-manager; do
+          for package in cockpit-upside superfile nm-hsp virtui-manager; do
             (
               cd "stable-set/${package}"
               sha256sum -c metadata/SHA256SUMS
@@ -153,15 +154,18 @@ jobs:
 
           UPSIDE_RPM="$(find stable-set/cockpit-upside/rpms -maxdepth 1 -type f -name 'cockpit-upside-*.noarch.rpm' -print -quit)"
           SUPERFILE_RPM="$(find stable-set/superfile/rpms -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
+          NM_HSP_RPM="$(find stable-set/nm-hsp/rpms -maxdepth 1 -type f -name 'nm-hsp-*.x86_64.rpm' -print -quit)"
           VIRTUI_RPM="$(find stable-set/virtui-manager/rpms -maxdepth 1 -type f -name 'virtui-manager-*.noarch.rpm' -print -quit)"
 
           test -n "${UPSIDE_RPM}"
           test -n "${SUPERFILE_RPM}"
+          test -n "${NM_HSP_RPM}"
           test -n "${VIRTUI_RPM}"
 
           dnf install -y \
             "${UPSIDE_RPM}" \
             "${SUPERFILE_RPM}" \
+            "${NM_HSP_RPM}" \
             "${VIRTUI_RPM}"
 
       - name: Validate Fedora package set
@@ -177,7 +181,7 @@ jobs:
           VIRTUI_VERSION="${VERSION}"
           VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
 
-          rpm -q cockpit-upside superfile virtui-manager
+          rpm -q cockpit-upside superfile nm-hsp virtui-manager
 
           test -f /usr/share/cockpit/upside/manifest.json
           test -f /usr/share/licenses/cockpit-upside/LICENSE
@@ -186,6 +190,10 @@ jobs:
           /usr/bin/spf --version | tee /tmp/spf-version.txt
           grep -Fq "v${SUPERFILE_VERSION}" /tmp/spf-version.txt
           /usr/bin/spf --help >/dev/null
+
+          test -x /usr/bin/nm-hsp
+          if /usr/bin/nm-hsp --invalid-option >/tmp/nm-hsp-invalid.txt 2>&1; then exit 1; fi
+          grep -Fq 'usage: nm-hsp [--snapshot]' /tmp/nm-hsp-invalid.txt
 
           test -x /usr/bin/virtui-manager
           test -x /usr/bin/vmc
@@ -226,9 +234,10 @@ jobs:
 
           rpm -V cockpit-upside
           rpm -V superfile
+          rpm -V nm-hsp
           rpm -V virtui-manager
 
-          printf 'Validated Fedora 44: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s\n' \
+          printf 'Validated Fedora 44: UPSide %s, Superfile %s, nm-hsp, VirtUI Manager %s, Textual %s\n' \
             "${UPSIDE_VERSION}" \
             "${SUPERFILE_VERSION}" \
             "${VIRTUI_VERSION}" \
@@ -241,7 +250,7 @@ jobs:
           {
             echo '## Fedora 44 stable package set'
             echo
-            echo '- Packages: UPSide, Superfile, VirtUI Manager'
+            echo '- Packages: UPSide, Superfile, nm-hsp, VirtUI Manager'
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -310,7 +319,7 @@ jobs:
               dnf install -y rpm file
               dnf clean all
 
-              for package in cockpit-upside superfile virtui-manager glances; do
+              for package in cockpit-upside superfile nm-hsp virtui-manager glances; do
                 (
                   cd "/stable-set/${package}"
                   sha256sum -c metadata/SHA256SUMS
@@ -320,17 +329,20 @@ jobs:
 
               UPSIDE_RPM="$(find /stable-set/cockpit-upside/rpms -maxdepth 1 -type f -name "cockpit-upside-*.noarch.rpm" -print -quit)"
               SUPERFILE_RPM="$(find /stable-set/superfile/rpms -maxdepth 1 -type f -name "superfile-*.x86_64.rpm" -print -quit)"
+              NM_HSP_RPM="$(find /stable-set/nm-hsp/rpms -maxdepth 1 -type f -name "nm-hsp-*.x86_64.rpm" -print -quit)"
               VIRTUI_RPM="$(find /stable-set/virtui-manager/rpms -maxdepth 1 -type f -name "virtui-manager-*.noarch.rpm" -print -quit)"
               GLANCES_RPM="$(find /stable-set/glances/rpms -maxdepth 1 -type f -name "glances-*.noarch.rpm" -print -quit)"
 
               test -n "${UPSIDE_RPM}"
               test -n "${SUPERFILE_RPM}"
+              test -n "${NM_HSP_RPM}"
               test -n "${VIRTUI_RPM}"
               test -n "${GLANCES_RPM}"
 
               dnf install -y \
                 "${UPSIDE_RPM}" \
                 "${SUPERFILE_RPM}" \
+                "${NM_HSP_RPM}" \
                 "${VIRTUI_RPM}" \
                 "${GLANCES_RPM}"
 
@@ -344,7 +356,7 @@ jobs:
               source /stable-set/glances/metadata/package.env
               GLANCES_VERSION="${VERSION}"
 
-              rpm -q cockpit-upside superfile virtui-manager glances
+              rpm -q cockpit-upside superfile nm-hsp virtui-manager glances
 
               test -f /usr/share/cockpit/upside/manifest.json
               test -f /usr/share/licenses/cockpit-upside/LICENSE
@@ -353,6 +365,10 @@ jobs:
               /usr/bin/spf --version | tee /tmp/spf-version.txt
               grep -Fq "v${SUPERFILE_VERSION}" /tmp/spf-version.txt
               /usr/bin/spf --help >/dev/null
+
+              test -x /usr/bin/nm-hsp
+              if /usr/bin/nm-hsp --invalid-option >/tmp/nm-hsp-invalid.txt 2>&1; then exit 1; fi
+              grep -Fq "usage: nm-hsp [--snapshot]" /tmp/nm-hsp-invalid.txt
 
               test -x /usr/bin/virtui-manager
               test -x /usr/bin/vmc
@@ -381,6 +397,7 @@ jobs:
 
               rpm -V cockpit-upside
               rpm -V superfile
+              rpm -V nm-hsp
               rpm -V virtui-manager
               rpm -V glances
 
@@ -471,7 +488,60 @@ jobs:
           {
             echo '## AlmaLinux 10 stable package set'
             echo
-            echo '- Packages: UPSide, Superfile, VirtUI Manager, Glances'
+            echo '- Packages: UPSide, Superfile, nm-hsp, VirtUI Manager, Glances'
             echo '- Compatibility package: mergerfs x86-64-v2 with FUSE functional test'
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
+
+
+  validate_nm_hsp_arm:
+    name: Validate nm-hsp stable - ${{ matrix.display_name }}
+    needs:
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - display_name: Fedora 44 aarch64
+            container: registry.fedoraproject.org/fedora:44
+          - display_name: AlmaLinux 10 aarch64
+            container: almalinux:10
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Prepare validation tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y rpm binutils
+          dnf clean all
+
+      - name: Download exact stable package set
+        uses: actions/download-artifact@v7
+        with:
+          name: stable-package-set
+          path: stable-set
+
+      - name: Validate nm-hsp aarch64 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd stable-set/nm-hsp
+            sha256sum -c metadata/SHA256SUMS
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+          RPM_FILE="$(find stable-set/nm-hsp/rpms -maxdepth 1 -type f -name 'nm-hsp-*.aarch64.rpm' -print -quit)"
+          test -n "${RPM_FILE}"
+
+          dnf install -y "${RPM_FILE}"
+          rpm -q nm-hsp
+          rpm -q --qf '%{ARCH}\n' nm-hsp | grep -Fqx aarch64
+          test -x /usr/bin/nm-hsp
+          readelf -h /usr/bin/nm-hsp | grep -Fq AArch64
+          if /usr/bin/nm-hsp --invalid-option >/tmp/nm-hsp-invalid.txt 2>&1; then exit 1; fi
+          grep -Fq 'usage: nm-hsp [--snapshot]' /tmp/nm-hsp-invalid.txt
+          rpm -V nm-hsp

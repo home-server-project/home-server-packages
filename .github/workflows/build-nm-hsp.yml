@@ -1,0 +1,277 @@
+---
+name: Build nm-hsp package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/nm-hsp/**'
+      - '.github/workflows/build-nm-hsp.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/nm-hsp/**'
+      - '.github/workflows/build-nm-hsp.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nm-hsp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build nm-hsp RPM - ${{ matrix.rpm_arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rpm_arch: x86_64
+            runner: ubuntu-24.04
+          - rpm_arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: registry.fedoraproject.org/fedora:44
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y git golang rpm-build tar gzip binutils file
+          dnf clean all
+
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Build and test nm-hsp RPM
+        shell: bash
+        env:
+          RPM_ARCH: ${{ matrix.rpm_arch }}
+        run: |
+          bash packages/nm-hsp/build.sh
+
+      - name: Upload nm-hsp RPM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nm-hsp-${{ matrix.rpm_arch }}
+          path: out/nm-hsp/${{ matrix.rpm_arch }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate nm-hsp - ${{ matrix.display_name }}
+    needs:
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44-x86_64
+            display_name: Fedora 44 x86_64
+            runner: ubuntu-24.04
+            container: registry.fedoraproject.org/fedora:44
+            rpm_arch: x86_64
+            elf_machine: Advanced Micro Devices X86-64
+          - id: el10-x86_64
+            display_name: AlmaLinux 10 x86_64
+            runner: ubuntu-24.04
+            container: almalinux:10
+            rpm_arch: x86_64
+            elf_machine: Advanced Micro Devices X86-64
+          - id: fedora44-aarch64
+            display_name: Fedora 44 aarch64
+            runner: ubuntu-24.04-arm
+            container: registry.fedoraproject.org/fedora:44
+            rpm_arch: aarch64
+            elf_machine: AArch64
+          - id: el10-aarch64
+            display_name: AlmaLinux 10 aarch64
+            runner: ubuntu-24.04-arm
+            container: almalinux:10
+            rpm_arch: aarch64
+            elf_machine: AArch64
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Install validation tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y rpm binutils file
+          dnf clean all
+
+      - name: Download exact nm-hsp RPM artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nm-hsp-${{ matrix.rpm_arch }}
+          path: package
+
+      - name: Verify and install exact RPM
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.rpm_arch }}
+          EXPECTED_ELF_MACHINE: ${{ matrix.elf_machine }}
+        run: |
+          set -euo pipefail
+
+          (
+            cd package
+            sha256sum -c metadata/SHA256SUMS
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+          source package/metadata/package.env
+          [[ "${RPM_ARCH}" == "${EXPECTED_ARCH}" ]]
+
+          RPM_FILE="$(find package/rpms -maxdepth 1 -type f -name "nm-hsp-*.${EXPECTED_ARCH}.rpm" -print -quit)"
+          test -n "${RPM_FILE}"
+
+          dnf install -y "${RPM_FILE}"
+
+          rpm -q nm-hsp
+          rpm -q --qf '%{ARCH}\n' nm-hsp | grep -Fqx "${EXPECTED_ARCH}"
+          test -x /usr/bin/nm-hsp
+          readelf -h /usr/bin/nm-hsp | grep -Fq "${EXPECTED_ELF_MACHINE}"
+
+          if /usr/bin/nm-hsp --invalid-option >/tmp/nm-hsp-invalid.txt 2>&1; then
+            echo 'ERROR: invalid option unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -Fq 'usage: nm-hsp [--snapshot]' /tmp/nm-hsp-invalid.txt
+
+          rpm -V nm-hsp
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: nm-hsp-validation-${{ matrix.id }}
+          path: package/metadata/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified nm-hsp artifact
+    needs:
+      - build
+      - validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download validated x86_64 artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nm-hsp-x86_64
+          path: package-x86_64
+
+      - name: Download validated aarch64 artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nm-hsp-aarch64
+          path: package-aarch64
+
+      - name: Assemble multi-architecture package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source package-x86_64/metadata/package.env
+          [[ "${PACKAGE}" == "nm-hsp" ]]
+          [[ "${RPM_ARCH}" == "x86_64" ]]
+          NM_HSP_VERSION="${VERSION}"
+          NM_HSP_COMMIT="${UPSTREAM_COMMIT}"
+          NM_HSP_LICENSE="${LICENSE}"
+          NM_HSP_UPSTREAM="${UPSTREAM}"
+
+          source package-aarch64/metadata/package.env
+          [[ "${PACKAGE}" == "nm-hsp" ]]
+          [[ "${RPM_ARCH}" == "aarch64" ]]
+          [[ "${VERSION}" == "${NM_HSP_VERSION}" ]]
+          [[ "${UPSTREAM_COMMIT}" == "${NM_HSP_COMMIT}" ]]
+
+          cmp package-x86_64/source/nm-hsp-*.tar.gz package-aarch64/source/nm-hsp-*.tar.gz
+          cmp package-x86_64/licenses/LICENSE package-aarch64/licenses/LICENSE
+
+          mkdir -p package/{rpms,source,licenses,metadata/x86_64,metadata/aarch64}
+          cp package-x86_64/rpms/*.rpm package/rpms/
+          cp package-aarch64/rpms/*.rpm package/rpms/
+          cp package-x86_64/source/* package/source/
+          cp package-x86_64/licenses/* package/licenses/
+          cp package-x86_64/metadata/* package/metadata/x86_64/
+          cp package-aarch64/metadata/* package/metadata/aarch64/
+
+          cat > package/metadata/package.env <<EOF
+          PACKAGE=nm-hsp
+          VERSION=${NM_HSP_VERSION}
+          UPSTREAM_COMMIT=${NM_HSP_COMMIT}
+          LICENSE=${NM_HSP_LICENSE}
+          UPSTREAM=${NM_HSP_UPSTREAM}
+          PACKAGE_CHANNEL=universal
+          ARCHITECTURES=x86_64,aarch64
+          EOF
+
+          (
+            cd package
+            sha256sum rpms/* source/* licenses/* metadata/x86_64/* metadata/aarch64/* > metadata/SHA256SUMS
+            sha256sum rpms/*.rpm > metadata/rpm-sha256.txt
+          )
+
+          echo "NM_HSP_VERSION=${NM_HSP_VERSION}" >> "${GITHUB_ENV}"
+          echo "NM_HSP_COMMIT=${NM_HSP_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nm-hsp" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF
+          FROM scratch
+          LABEL org.opencontainers.image.title="nm-hsp package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project nm-hsp RPMs for x86_64 and aarch64 with source, license, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${NM_HSP_VERSION}" \
+                io.home-server-project.package="nm-hsp" \
+                io.home-server-project.upstream-commit="${NM_HSP_COMMIT}" \
+                io.home-server-project.channel="universal"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF
+
+          docker build \
+            --file package/Containerfile \
+            --tag "${PACKAGE_IMAGE}:${NM_HSP_VERSION}-1.hsp" \
+            --tag "${PACKAGE_IMAGE}:stable" \
+            package
+
+      - name: Publish immutable and stable tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${NM_HSP_VERSION}-1.hsp"
+          docker push "${PACKAGE_IMAGE}:stable"
