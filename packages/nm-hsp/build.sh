@@ -32,6 +32,7 @@ git checkout --detach "${NM_HSP_COMMIT}"
 test "$(git rev-parse HEAD)" = "${NM_HSP_COMMIT}"
 test -f LICENSE
 test -f README.md
+test -f contrib/polkit/49-nm-hsp-vpn.rules
 test -f go.mod
 test -f go.sum
 
@@ -59,11 +60,12 @@ if readelf -l "${OUT_DIR}/nm-hsp" | grep -q 'Requesting program interpreter'; th
   exit 1
 fi
 
-mkdir -p   "${PAYLOAD_DIR}/usr/bin"   "${PAYLOAD_DIR}/usr/share/licenses/nm-hsp"   "${PAYLOAD_DIR}/usr/share/doc/nm-hsp"
+mkdir -p   "${PAYLOAD_DIR}/usr/bin"   "${PAYLOAD_DIR}/usr/share/licenses/nm-hsp"   "${PAYLOAD_DIR}/usr/share/doc/nm-hsp"   "${PAYLOAD_DIR}/usr/share/polkit-1/rules.d"
 
 install -Dm0755 "${OUT_DIR}/nm-hsp" "${PAYLOAD_DIR}/usr/bin/nm-hsp"
 install -Dm0644 LICENSE "${PAYLOAD_DIR}/usr/share/licenses/nm-hsp/LICENSE"
 install -Dm0644 README.md "${PAYLOAD_DIR}/usr/share/doc/nm-hsp/README.md"
+install -Dm0644 contrib/polkit/49-nm-hsp-vpn.rules "${PAYLOAD_DIR}/usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules"
 
 tar -C "${PAYLOAD_DIR}" -czf "${RPMBUILD_DIR}/SOURCES/nm-hsp-payload.tar.gz" .
 cp "${PKG_DIR}/nm-hsp.spec" "${RPMBUILD_DIR}/SPECS/nm-hsp.spec"
@@ -102,7 +104,16 @@ rpm -qp --qf '%{ARCH}\n' "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-arch
 grep -Fqx "${RPM_ARCH}" "${OUT_DIR}/metadata/rpm-arch.txt"
 grep -q '/usr/bin/nm-hsp$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/share/licenses/nm-hsp/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
-grep -q '/usr/share/doc/nm-hsp/README.md$' "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/doc/nm-hsp/README.md
+grep -q '^License *: Apache-2.0$' "${OUT_DIR}/metadata/rpm-info.txt"
+
+printf 'Built nm-hsp %s RPM for %s from %s\n'   "${NM_HSP_VERSION}" "${RPM_ARCH}" "${NM_HSP_COMMIT}"
+ "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+grep -q '^License *: Apache-2.0$' "${OUT_DIR}/metadata/rpm-info.txt"
+
+printf 'Built nm-hsp %s RPM for %s from %s\n'   "${NM_HSP_VERSION}" "${RPM_ARCH}" "${NM_HSP_COMMIT}"
+ "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: Apache-2.0$' "${OUT_DIR}/metadata/rpm-info.txt"
 
 printf 'Built nm-hsp %s RPM for %s from %s\n'   "${NM_HSP_VERSION}" "${RPM_ARCH}" "${NM_HSP_COMMIT}"
