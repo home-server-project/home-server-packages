@@ -104,16 +104,8 @@ rpm -qp --qf '%{ARCH}\n' "${OUT_DIR}"/rpms/*.rpm > "${OUT_DIR}/metadata/rpm-arch
 grep -Fqx "${RPM_ARCH}" "${OUT_DIR}/metadata/rpm-arch.txt"
 grep -q '/usr/bin/nm-hsp$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '/usr/share/licenses/nm-hsp/LICENSE$' "${OUT_DIR}/metadata/rpm-files.txt"
-grep -q '/usr/share/doc/nm-hsp/README.md
-grep -q '^License *: Apache-2.0$' "${OUT_DIR}/metadata/rpm-info.txt"
-
-printf 'Built nm-hsp %s RPM for %s from %s\n'   "${NM_HSP_VERSION}" "${RPM_ARCH}" "${NM_HSP_COMMIT}"
- "${OUT_DIR}/metadata/rpm-files.txt"
-grep -q '/usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
-grep -q '^License *: Apache-2.0$' "${OUT_DIR}/metadata/rpm-info.txt"
-
-printf 'Built nm-hsp %s RPM for %s from %s\n'   "${NM_HSP_VERSION}" "${RPM_ARCH}" "${NM_HSP_COMMIT}"
- "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/doc/nm-hsp/README.md$' "${OUT_DIR}/metadata/rpm-files.txt"
+grep -q '/usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: Apache-2.0$' "${OUT_DIR}/metadata/rpm-info.txt"
 
 printf 'Built nm-hsp %s RPM for %s from %s\n'   "${NM_HSP_VERSION}" "${RPM_ARCH}" "${NM_HSP_COMMIT}"
