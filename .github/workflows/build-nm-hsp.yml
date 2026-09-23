@@ -142,6 +142,11 @@ jobs:
           rpm -q nm-hsp
           rpm -q --qf '%{ARCH}\n' nm-hsp | grep -Fqx "${EXPECTED_ARCH}"
           test -x /usr/bin/nm-hsp
+          test -f /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+          grep -Fq 'tailscaled.service' /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+          grep -Fq 'netbird.service' /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+          grep -Fq 'verb === "start"' /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+          grep -Fq 'verb === "stop"' /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
           readelf -h /usr/bin/nm-hsp | grep -Fq "${EXPECTED_ELF_MACHINE}"
 
           if /usr/bin/nm-hsp --invalid-option >/tmp/nm-hsp-invalid.txt 2>&1; then
