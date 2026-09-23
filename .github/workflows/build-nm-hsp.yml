@@ -165,11 +165,123 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+
+  validate_x86_64_v2:
+    name: Validate nm-hsp - AlmaLinux 10 x86_64_v2
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Install v2 validation tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman skopeo
+
+      - name: Download exact x86_64 nm-hsp RPM artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nm-hsp-x86_64
+          path: package
+
+      - name: Resolve genuine AlmaLinux 10 x86_64_v2 environment
+        id: alma
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ALMA_IMAGE='quay.io/almalinuxorg/10-base:10'
+          digest="$(skopeo inspect \
+            --override-arch amd64 \
+            --override-variant v2 \
+            --format '{{.Digest}}' \
+            "docker://${ALMA_IMAGE}")"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          alma_ref="${ALMA_IMAGE%:*}@${digest}"
+          echo "ref=${alma_ref}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved AlmaLinux x86_64_v2 image: ${alma_ref}"
+
+          sudo podman pull --platform linux/amd64/v2 "${alma_ref}"
+
+      - name: Verify and install exact x86_64 RPM on x86_64_v2
+        shell: bash
+        env:
+          ALMA_V2_REF: ${{ steps.alma.outputs.ref }}
+        run: |
+          set -euo pipefail
+
+          sudo podman run --rm \
+            --platform linux/amd64/v2 \
+            -v "${PWD}/package:/package:ro" \
+            "${ALMA_V2_REF}" \
+            /bin/bash -c '
+              set -euo pipefail
+
+              dnf install -y rpm binutils file
+              dnf clean all
+
+              environment_arch="$(rpm -q --qf "%{ARCH}\n" glibc | head -n1)"
+              [[ "${environment_arch}" == "x86_64_v2" ]]
+              echo "Validated AlmaLinux environment RPM architecture: ${environment_arch}"
+
+              (
+                cd /package
+                sha256sum -c metadata/SHA256SUMS
+                sha256sum -c metadata/rpm-sha256.txt
+              )
+
+              source /package/metadata/package.env
+              [[ "${RPM_ARCH}" == "x86_64" ]]
+              echo "Artifact metadata RPM architecture: ${RPM_ARCH}"
+
+              RPM_FILE="$(find /package/rpms -maxdepth 1 -type f -name "nm-hsp-*.x86_64.rpm" -print -quit)"
+              test -n "${RPM_FILE}"
+              echo "Testing exact RPM: $(basename "${RPM_FILE}")"
+              sha256sum "${RPM_FILE}"
+
+              dnf install -y "${RPM_FILE}"
+
+              rpm -q nm-hsp
+              rpm -q --qf "%{ARCH}\n" nm-hsp | grep -Fqx "x86_64"
+              rpm -q NetworkManager
+              rpm -q polkit
+
+              test -x /usr/bin/nm-hsp
+              file /usr/bin/nm-hsp
+              readelf -h /usr/bin/nm-hsp | grep -Fq "Advanced Micro Devices X86-64"
+
+              if /usr/bin/nm-hsp --invalid-option >/tmp/nm-hsp-invalid.txt 2>&1; then
+                echo "ERROR: invalid option unexpectedly succeeded" >&2
+                exit 1
+              fi
+              grep -Fq "usage: nm-hsp [--snapshot]" /tmp/nm-hsp-invalid.txt
+
+              test -f /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+              grep -Fq "tailscaled.service" /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+              grep -Fq "netbird.service" /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+              grep -Fq "verb === \"start\"" /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+              grep -Fq "verb === \"stop\"" /usr/share/polkit-1/rules.d/49-nm-hsp-vpn.rules
+
+              rpm -V nm-hsp
+            '
+
+      - name: Upload x86_64_v2 validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: nm-hsp-validation-el10-x86_64_v2
+          path: package/metadata/
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     name: Publish verified nm-hsp artifact
     needs:
       - build
       - validate
+      - validate_x86_64_v2
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
 
