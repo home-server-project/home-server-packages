@@ -5,13 +5,15 @@
     "config:best-practices",
   ],
 
+  "enabledManagers": [
+    "custom.regex",
+  ],
+
   "rebaseWhen": "automerging",
   "platformAutomerge": false,
 
   "lockFileMaintenance": {
-    "enabled": true,
-    "automerge": true,
-    "automergeType": "pr",
+    "enabled": false,
   },
 
   "customManagers": [
@@ -96,23 +98,6 @@
 
   "packageRules": [
     {
-      "matchManagers": [
-        "github-actions",
-      ],
-      "pinDigests": true,
-      "automerge": true,
-      "automergeType": "pr",
-    },
-    {
-      "matchManagers": [
-        "pep621",
-      ],
-      "matchDepTypes": [
-        "requires-python",
-      ],
-      "enabled": false,
-    },
-    {
       "matchPackageNames": [
         "deviationist/cockpit-upside",
         "yorukot/superfile",
@@ -122,13 +107,6 @@
         "home-server-project/nm-hsp",
       ],
       "prHourlyLimit": 0,
-      "automerge": true,
-      "automergeType": "pr",
-    },
-    {
-      "matchPackageNames": [
-        "textual",
-      ],
       "automerge": true,
       "automergeType": "pr",
     },
