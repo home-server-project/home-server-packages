@@ -6,6 +6,7 @@
   ],
 
   "rebaseWhen": "never",
+  "platformAutomerge": false,
 
   "lockFileMaintenance": {
     "enabled": true,
