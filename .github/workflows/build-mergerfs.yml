@@ -43,7 +43,7 @@ jobs:
           sudo apt-get install -y podman skopeo
 
       - name: Checkout package repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Resolve AlmaLinux x86-64-v2 build image
         shell: bash
@@ -85,7 +85,7 @@ jobs:
             '
 
       - name: Upload mergerfs RPM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mergerfs-x86_64_v2
           path: out/mergerfs/
@@ -107,7 +107,7 @@ jobs:
           sudo apt-get install -y podman skopeo
 
       - name: Download exact mergerfs RPM artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: mergerfs-x86_64_v2
           path: package
@@ -226,7 +226,7 @@ jobs:
             '
 
       - name: Upload validation evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mergerfs-validation-el10-v2
           path: package/validation/el10-v2/
@@ -247,7 +247,7 @@ jobs:
 
     steps:
       - name: Download validated package artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: mergerfs-x86_64_v2
           path: package
