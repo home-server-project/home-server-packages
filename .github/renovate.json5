@@ -119,6 +119,13 @@
         "nicolargo/glances",
         "aginies/virtui-manager",
         "home-server-project/nm-hsp",
+      ],
+      "prHourlyLimit": 0,
+      "automerge": true,
+      "automergeType": "pr",
+    },
+    {
+      "matchPackageNames": [
         "textual",
       ],
       "automerge": true,
