@@ -83,6 +83,20 @@
       "extractVersionTemplate": "^v?(?<version>.*)$",
       "autoReplaceStringTemplate": "VIRTUI_MANAGER_VERSION={{{newValue}}}\\nVIRTUI_MANAGER_COMMIT={{{newDigest}}}",
     },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^packages\\/nm-hsp\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "NM_HSP_VERSION=(?<currentValue>\\S+)\\s+NM_HSP_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "home-server-project/nm-hsp",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "autoReplaceStringTemplate": "NM_HSP_VERSION={{{newValue}}}\\nNM_HSP_COMMIT={{{newDigest}}}",
+    },
   ],
 
   "packageRules": [
@@ -110,6 +124,7 @@
         "trapexit/mergerfs",
         "nicolargo/glances",
         "aginies/virtui-manager",
+        "home-server-project/nm-hsp",
         "textual",
       ],
       "automerge": true,
