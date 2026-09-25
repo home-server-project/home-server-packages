@@ -31,7 +31,7 @@ jobs:
     name: Build VirtUI Manager RPM
     runs-on: ubuntu-24.04
     container:
-      image: registry.fedoraproject.org/fedora:44
+      image: registry.fedoraproject.org/fedora:44@sha256:2cdfedd312a3c92e0d9932ee18d9d2dd80b00fa0bb4ebdaa86736195b5eaa974
 
     steps:
       - name: Install build and test dependencies
@@ -66,7 +66,7 @@ jobs:
           dnf clean all
 
       - name: Checkout package repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Build and test VirtUI Manager RPM
         shell: bash
@@ -74,7 +74,7 @@ jobs:
           bash packages/virtui-manager/build.sh
 
       - name: Upload VirtUI Manager RPM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: virtui-manager-noarch
           path: out/virtui-manager/
@@ -120,7 +120,7 @@ jobs:
           dnf clean all
 
       - name: Download exact VirtUI Manager RPM artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: virtui-manager-noarch
           path: package
@@ -194,7 +194,7 @@ jobs:
              "package/validation/${{ matrix.id }}/private-python-packages.tsv"
 
       - name: Upload validation evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: virtui-manager-validation-${{ matrix.id }}
           path: package/validation/${{ matrix.id }}/
@@ -215,7 +215,7 @@ jobs:
 
     steps:
       - name: Download validated package artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: virtui-manager-noarch
           path: package
