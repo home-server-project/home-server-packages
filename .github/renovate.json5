@@ -5,7 +5,7 @@
     "config:best-practices",
   ],
 
-  "rebaseWhen": "never",
+  "rebaseWhen": "automerging",
   "platformAutomerge": false,
 
   "lockFileMaintenance": {
