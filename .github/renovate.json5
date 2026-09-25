@@ -25,7 +25,6 @@
       "packageNameTemplate": "deviationist/cockpit-upside",
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
-      "autoReplaceStringTemplate": "UPSIDE_VERSION={{{newValue}}}\\nUPSIDE_COMMIT={{{newDigest}}}",
     },
     {
       "customType": "regex",
@@ -39,7 +38,6 @@
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v?(?<version>.*)$",
-      "autoReplaceStringTemplate": "SUPERFILE_VERSION={{{newValue}}}\\nSUPERFILE_COMMIT={{{newDigest}}}",
     },
     {
       "customType": "regex",
@@ -53,7 +51,6 @@
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v?(?<version>.*)$",
-      "autoReplaceStringTemplate": "MERGERFS_VERSION={{{newValue}}}\\nMERGERFS_COMMIT={{{newDigest}}}",
     },
     {
       "customType": "regex",
@@ -67,7 +64,6 @@
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v?(?<version>.*)$",
-      "autoReplaceStringTemplate": "GLANCES_VERSION={{{newValue}}}\\nGLANCES_COMMIT={{{newDigest}}}",
     },
     {
       "customType": "regex",
@@ -81,7 +77,6 @@
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v?(?<version>.*)$",
-      "autoReplaceStringTemplate": "VIRTUI_MANAGER_VERSION={{{newValue}}}\\nVIRTUI_MANAGER_COMMIT={{{newDigest}}}",
     },
     {
       "customType": "regex",
@@ -95,7 +90,6 @@
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v?(?<version>.*)$",
-      "autoReplaceStringTemplate": "NM_HSP_VERSION={{{newValue}}}\\nNM_HSP_COMMIT={{{newDigest}}}",
     },
   ],
 
