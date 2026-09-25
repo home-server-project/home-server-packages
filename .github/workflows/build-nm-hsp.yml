@@ -39,7 +39,7 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     container:
-      image: registry.fedoraproject.org/fedora:44@sha256:2cdfedd312a3c92e0d9932ee18d9d2dd80b00fa0bb4ebdaa86736195b5eaa974
+      image: registry.fedoraproject.org/fedora:44
 
     steps:
       - name: Install build dependencies
@@ -50,7 +50,7 @@ jobs:
           dnf clean all
 
       - name: Checkout package repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@v6
 
       - name: Build and test nm-hsp RPM
         shell: bash
@@ -60,7 +60,7 @@ jobs:
           bash packages/nm-hsp/build.sh
 
       - name: Upload nm-hsp RPM artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         with:
           name: nm-hsp-${{ matrix.rpm_arch }}
           path: out/nm-hsp/${{ matrix.rpm_arch }}/
@@ -112,7 +112,7 @@ jobs:
           dnf clean all
 
       - name: Download exact nm-hsp RPM artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@v7
         with:
           name: nm-hsp-${{ matrix.rpm_arch }}
           path: package
@@ -158,7 +158,7 @@ jobs:
           rpm -V nm-hsp
 
       - name: Upload validation evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         with:
           name: nm-hsp-validation-${{ matrix.id }}
           path: package/metadata/
@@ -181,7 +181,7 @@ jobs:
           sudo apt-get install -y podman skopeo
 
       - name: Download exact x86_64 nm-hsp RPM artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@v7
         with:
           name: nm-hsp-x86_64
           path: package
@@ -269,7 +269,7 @@ jobs:
             '
 
       - name: Upload x86_64_v2 validation evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         with:
           name: nm-hsp-validation-el10-x86_64_v2
           path: package/metadata/
@@ -291,13 +291,13 @@ jobs:
 
     steps:
       - name: Download validated x86_64 artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@v7
         with:
           name: nm-hsp-x86_64
           path: package-x86_64
 
       - name: Download validated aarch64 artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@v7
         with:
           name: nm-hsp-aarch64
           path: package-aarch64
