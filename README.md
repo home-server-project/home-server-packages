@@ -12,6 +12,7 @@ Implemented and published package pipelines:
 - Superfile (`yorukot/superfile`)
 - mergerfs (`trapexit/mergerfs`) — AlmaLinux 10 x86-64-v2 compatibility build
 - Glances (`nicolargo/glances`) — AlmaLinux 10 / JustVoxel system monitor package
+- Playit (`playit-cloud/playit-agent`) — AlmaLinux 10 / JustVoxel game tunnel agent
 - VirtUI Manager (`aginies/virtui-manager`)
 - NetworkManager-HSP (`home-server-project/nm-hsp`) — x86_64 + aarch64
 
@@ -57,6 +58,7 @@ AlmaLinux-specific channels:
 
 ```text
 ghcr.io/home-server-project/glances:stable
+ghcr.io/home-server-project/playit:stable
 ghcr.io/home-server-project/mergerfs:stable-v2
 ```
 

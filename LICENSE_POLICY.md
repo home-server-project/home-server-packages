@@ -55,6 +55,16 @@ Declared license: `LGPL-3.0-only`.
 The RPM build must preserve the upstream `COPYING` license text and retain the exact corresponding upstream source used for every published Glances RPM. Glances is packaged as an AlmaLinux 10 target package; normal runtime Python libraries come from AlmaLinux 10 and EPEL rather than a bundled dependency tree.
 
 
+## Playit
+
+Upstream: `https://github.com/playit-cloud/playit-agent`
+
+Declared license: `BSD-2-Clause`.
+
+The RPM build must preserve the upstream `LICENSE.txt` text and retain the exact corresponding upstream source used for every published Playit RPM. Playit is built from the verified upstream release source with Cargo's committed `Cargo.lock`; third-party Rust dependency license metadata and available license/notice files are retained with the binary package and published artifact.
+
+The package targets AlmaLinux 10 x86_64 for JustVoxel. It ships the upstream systemd service, sysusers definition, logrotate configuration, CLI wrapper, and daemon, but the RPM must not enable or start Playit during installation. JustVoxel owns the appliance policy that enables the service while leaving it unconfigured until an administrator provisions the Playit secret.
+
 ## NetworkManager-HSP
 
 Upstream: `https://github.com/home-server-project/nm-hsp`

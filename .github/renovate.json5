@@ -71,6 +71,19 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
+        "/^packages\\/playit\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "PLAYIT_VERSION=(?<currentValue>\\S+)\\s+PLAYIT_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "playit-cloud/playit-agent",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
         "/^packages\\/virtui-manager\\/package\\.env$/",
       ],
       "matchStrings": [
@@ -103,12 +116,19 @@
         "yorukot/superfile",
         "trapexit/mergerfs",
         "nicolargo/glances",
+        "playit-cloud/playit-agent",
         "aginies/virtui-manager",
         "home-server-project/nm-hsp",
       ],
       "prHourlyLimit": 0,
       "automerge": true,
       "automergeType": "pr",
+    },
+    {
+      "matchPackageNames": [
+        "playit-cloud/playit-agent",
+      ],
+      "ignoreUnstable": true,
     },
   ],
 }
