@@ -1,0 +1,276 @@
+---
+name: Build Playit package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/playit/**'
+      - '.github/workflows/build-playit.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/playit/**'
+      - '.github/workflows/build-playit.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Playit RPM
+    runs-on: ubuntu-24.04
+    container:
+      image: almalinux:10
+
+    steps:
+      - name: Prepare AlmaLinux build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dnf install -y \
+            binutils \
+            cargo \
+            file \
+            gcc \
+            git \
+            gzip \
+            python3 \
+            rpm-build \
+            rust \
+            tar
+          dnf clean all
+
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Build and test Playit RPM
+        shell: bash
+        run: |
+          bash packages/playit/build.sh
+
+      - name: Upload Playit RPM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: playit-x86_64
+          path: out/playit/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate Playit - AlmaLinux 10
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+    container:
+      image: almalinux:10
+
+    steps:
+      - name: Prepare AlmaLinux validation environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf install -y file rpm systemd util-linux
+          dnf clean all
+
+      - name: Download exact Playit RPM artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: playit-x86_64
+          path: package
+
+      - name: Verify, install, and exercise exact RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          (
+            cd package
+            cat metadata/rpm-sha256.txt
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+          RPM_FILE="$(find package/rpms -maxdepth 1 -type f -name 'playit-*.x86_64.rpm' -print -quit)"
+          test -n "${RPM_FILE}"
+
+          source package/metadata/package.env
+          [[ "${PACKAGE}" == "playit" ]]
+          [[ "${PACKAGE_CHANNEL}" == "el10-x86_64" ]]
+
+          dnf install -y "${RPM_FILE}"
+
+          rpm -q playit
+          test -x /usr/bin/playit
+          test -x /usr/bin/playitd
+          test -x /opt/playit/agent
+          test -x /opt/playit/playitd
+          test -f /usr/lib/systemd/system/playit.service
+          test -f /usr/lib/sysusers.d/playit.conf
+          test -f /usr/lib/tmpfiles.d/playit.conf
+          test -f /etc/logrotate.d/playit
+          test -f /usr/share/licenses/playit/LICENSE.txt
+          test -f /usr/share/licenses/playit/RUST-DEPENDENCIES.tsv
+          test -f /opt/playit/share/init/selected-manager
+          grep -Fqx systemd /opt/playit/share/init/selected-manager
+
+          /usr/bin/playit version | tee /tmp/playit-version.txt
+          grep -Fqx "${VERSION}" /tmp/playit-version.txt
+          /usr/bin/playit --help >/dev/null
+          /usr/bin/playitd --help >/dev/null
+
+          # The package factory must not make appliance policy decisions.
+          # A fresh RPM is installed but neither enabled nor configured.
+          test "$(systemctl is-enabled playit.service 2>/dev/null || true)" = "disabled"
+          test ! -e /etc/playit/playit.toml
+
+          systemd-sysusers /usr/lib/sysusers.d/playit.conf
+          systemd-tmpfiles --create /usr/lib/tmpfiles.d/playit.conf
+          getent passwd playit >/dev/null
+          getent group playit >/dev/null
+          test "$(stat -c '%U:%G %a' /etc/playit)" = "playit:playit 750"
+
+          # Prove the downstream JustVoxel policy is safe: enabling the unit
+          # requires no enrollment state, and the daemon can run unconfigured
+          # in Playit's supported waiting-for-secret phase.
+          systemctl enable playit.service
+          test "$(systemctl is-enabled playit.service)" = "enabled"
+          test ! -e /etc/playit/playit.toml
+
+          runuser -u playit -- \
+            /opt/playit/playitd \
+            --secret-path /etc/playit/playit.toml \
+            --socket-path /tmp/playitd-test.sock \
+            -l /tmp/playitd-test.log &
+          playitd_pid=$!
+
+          cleanup() {
+            kill "${playitd_pid}" >/dev/null 2>&1 || true
+            wait "${playitd_pid}" >/dev/null 2>&1 || true
+            rm -f /tmp/playitd-test.sock
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 40); do
+            if [[ -S /tmp/playitd-test.sock ]]; then
+              ready=1
+              break
+            fi
+            sleep 0.25
+          done
+
+          if [[ "${ready}" -ne 1 ]]; then
+            echo 'ERROR: unconfigured Playit daemon did not expose its IPC socket' >&2
+            cat /tmp/playitd-test.log >&2 || true
+            exit 1
+          fi
+
+          /opt/playit/agent --socket-path /tmp/playitd-test.sock status \
+            | tee /tmp/playit-status.txt
+          grep -Fq 'Phase: waiting for secret' /tmp/playit-status.txt
+          grep -Fq 'Secret configured: false' /tmp/playit-status.txt
+          grep -Fq "Version: ${VERSION}" /tmp/playit-status.txt
+          test ! -e /etc/playit/playit.toml
+
+          cleanup
+          trap - EXIT
+
+          rpm -V playit
+
+          mkdir -p package/validation/el10
+          cat /etc/os-release > package/validation/el10/os-release.txt
+          rpm -q playit > package/validation/el10/playit.txt
+          rpm -q --qf '%{ARCH}\n' playit > package/validation/el10/rpm-arch.txt
+          rpm -q --qf '%{SIZE}\n' playit > package/validation/el10/rpm-installed-size.txt
+          cp /tmp/playit-version.txt package/validation/el10/playit-version.txt
+          cp /tmp/playit-status.txt package/validation/el10/playit-unconfigured-status.txt
+          sha256sum "${RPM_FILE}" > package/validation/el10/rpm-sha256.txt
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: playit-validation-el10
+          path: package/validation/el10/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified Playit artifact
+    needs:
+      - build
+      - validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download validated package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: playit-x86_64
+          path: package
+
+      - name: Read package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source package/metadata/package.env
+
+          echo "PLAYIT_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "PLAYIT_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/playit" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF_CONTAINER
+          FROM scratch
+          LABEL org.opencontainers.image.title="playit package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project Playit AlmaLinux 10 RPM, source, licenses, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${PLAYIT_VERSION}" \
+                io.home-server-project.package="playit" \
+                io.home-server-project.upstream-commit="${PLAYIT_COMMIT}" \
+                io.home-server-project.channel="el10-x86_64"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF_CONTAINER
+
+          docker build \
+            --file package/Containerfile \
+            --tag "${PACKAGE_IMAGE}:${PLAYIT_VERSION}-1.hsp" \
+            --tag "${PACKAGE_IMAGE}:stable" \
+            package
+
+      - name: Publish immutable and stable tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${PLAYIT_VERSION}-1.hsp"
+          docker push "${PACKAGE_IMAGE}:stable"
