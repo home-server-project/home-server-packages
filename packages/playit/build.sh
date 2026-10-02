@@ -108,7 +108,6 @@ from pathlib import Path
 cargo_home = Path(os.environ["PLAYIT_CARGO_HOME"])
 license_out = Path(os.environ["PLAYIT_LICENSE_OUT"])
 tsv_path = Path(os.environ["PLAYIT_LICENSE_TSV"])
-metadata = json.loads(Path(os.environ.get("PLAYIT_METADATA", "out-not-used")).read_text()) if False else None
 metadata_path = Path.cwd().parents[1] / "out" / "playit" / "metadata" / "cargo-metadata.json"
 data = json.loads(metadata_path.read_text())
 
