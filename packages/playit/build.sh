@@ -20,7 +20,6 @@ mkdir -p \
     "${OUT_DIR}/metadata" \
     "${RPMBUILD_DIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} \
     "${PAYLOAD_DIR}/opt/playit/share/init/systemd" \
-    "${PAYLOAD_DIR}/opt/playit/share/init/openrc" \
     "${PAYLOAD_DIR}/usr/bin" \
     "${PAYLOAD_DIR}/usr/lib/systemd/system" \
     "${PAYLOAD_DIR}/usr/lib/sysusers.d" \
@@ -49,7 +48,6 @@ test -f LICENSE.txt
 test -f README.md
 test -f linux/playit
 test -f linux/playit.service
-test -f linux/playit.openrc
 test -f linux/playit.sysusers
 test -f linux/logrotate.conf
 
@@ -208,7 +206,6 @@ install -Dm0755 target/release/playitd "${PAYLOAD_DIR}/opt/playit/playitd"
 install -Dm0755 linux/playit "${PAYLOAD_DIR}/opt/playit/playit"
 install -Dm0644 linux/playit.service "${PAYLOAD_DIR}/usr/lib/systemd/system/playit.service"
 install -Dm0644 linux/playit.service "${PAYLOAD_DIR}/opt/playit/share/init/systemd/playit.service"
-install -Dm0755 linux/playit.openrc "${PAYLOAD_DIR}/opt/playit/share/init/openrc/playit"
 install -Dm0644 linux/playit.sysusers "${PAYLOAD_DIR}/usr/lib/sysusers.d/playit.conf"
 install -Dm0644 linux/logrotate.conf "${PAYLOAD_DIR}/etc/logrotate.d/playit"
 printf '%s\n' systemd > "${PAYLOAD_DIR}/opt/playit/share/init/selected-manager"
