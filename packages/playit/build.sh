@@ -74,7 +74,7 @@ export CARGO_HOME="${CARGO_HOME_DIR}"
 cargo --version | tee "${OUT_DIR}/metadata/cargo-version.txt"
 rustc --version | tee "${OUT_DIR}/metadata/rustc-version.txt"
 cargo fetch --locked
-cargo metadata --locked --format-version 1 > "${OUT_DIR}/metadata/cargo-metadata.json"
+cargo metadata --locked --filter-platform x86_64-unknown-linux-gnu --format-version 1 > "${OUT_DIR}/metadata/cargo-metadata.json"
 
 cargo test --locked \
     --package playit-cli \
@@ -111,10 +111,32 @@ tsv_path = Path(os.environ["PLAYIT_LICENSE_TSV"])
 metadata_path = Path.cwd().parents[1] / "out" / "playit" / "metadata" / "cargo-metadata.json"
 data = json.loads(metadata_path.read_text())
 
+packages_by_id = {pkg["id"]: pkg for pkg in data["packages"]}
+nodes_by_id = {node["id"]: node for node in data["resolve"]["nodes"]}
+root_ids = {
+    pkg["id"]
+    for pkg in data["packages"]
+    if pkg["name"] in {"playit-cli", "playitd"} and pkg.get("source") is None
+}
+if len(root_ids) != 2:
+    raise SystemExit(f"Expected Playit CLI and daemon workspace roots, found {len(root_ids)}")
+
+reachable = set()
+stack = list(root_ids)
+while stack:
+    package_id = stack.pop()
+    if package_id in reachable:
+        continue
+    reachable.add(package_id)
+    node = nodes_by_id.get(package_id)
+    if node is not None:
+        stack.extend(node.get("dependencies", []))
+
 registry_roots = list((cargo_home / "registry" / "src").glob("*"))
 rows = ["name\tversion\tlicense\tlicense_file\tretained_files"]
 
-for pkg in sorted(data["packages"], key=lambda p: (p["name"], p["version"])):
+for package_id in sorted(reachable):
+    pkg = packages_by_id[package_id]
     source = pkg.get("source") or ""
     if not source.startswith("registry+"):
         continue
