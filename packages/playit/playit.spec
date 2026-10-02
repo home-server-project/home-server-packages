@@ -37,8 +37,8 @@ tar -C %{buildroot} -xzf %{SOURCE0}
 /opt/playit/share/init/systemd/playit.service
 /opt/playit/share/init/openrc/playit
 %config(noreplace) %{_sysconfdir}/logrotate.d/playit
-%{_unitdir}/playit.service
-%{_sysusersdir}/playit.conf
-%{_tmpfilesdir}/playit.conf
+/usr/lib/systemd/system/playit.service
+/usr/lib/sysusers.d/playit.conf
+/usr/lib/tmpfiles.d/playit.conf
 %license %{_licensedir}/playit/
 %doc %{_docdir}/playit/README.md
