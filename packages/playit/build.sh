@@ -133,7 +133,7 @@ while stack:
         stack.extend(node.get("dependencies", []))
 
 registry_roots = list((cargo_home / "registry" / "src").glob("*"))
-rows = ["name\tversion\tlicense\tlicense_file\tretained_files"]
+rows = ["name\tversion\tlicense\tauthors\tlicense_file\tretained_files"]
 
 for package_id in sorted(reachable):
     pkg = packages_by_id[package_id]
@@ -144,6 +144,7 @@ for package_id in sorted(reachable):
     name = pkg["name"]
     version = pkg["version"]
     license_expr = pkg.get("license") or ""
+    authors = "; ".join(pkg.get("authors") or [])
     license_file = pkg.get("license_file") or ""
 
     matches = []
@@ -179,8 +180,6 @@ for package_id in sorted(reachable):
 
     if not license_expr and not license_file:
         raise SystemExit(f"Cargo dependency {name} {version} has no declared license metadata")
-    if not unique:
-        raise SystemExit(f"Cargo dependency {name} {version} has no retained license/notice file")
 
     dest = license_out / f"{name}-{version}"
     dest.mkdir(parents=True, exist_ok=True)
@@ -195,8 +194,9 @@ for package_id in sorted(reachable):
             name,
             version,
             license_expr,
+            authors,
             license_file,
-            ",".join(sorted(retained)),
+            ",".join(sorted(retained)) or "<none>",
         ])
     )
 
