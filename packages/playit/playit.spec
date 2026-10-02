@@ -35,7 +35,6 @@ tar -C %{buildroot} -xzf %{SOURCE0}
 /opt/playit/playitd
 /opt/playit/share/init/selected-manager
 /opt/playit/share/init/systemd/playit.service
-/opt/playit/share/init/openrc/playit
 %config(noreplace) %{_sysconfdir}/logrotate.d/playit
 /usr/lib/systemd/system/playit.service
 /usr/lib/sysusers.d/playit.conf
