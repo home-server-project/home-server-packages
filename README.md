@@ -15,6 +15,7 @@ Implemented and published package pipelines:
 - Playit (`playit-cloud/playit-agent`) — AlmaLinux 10 / JustVoxel game tunnel agent
 - VirtUI Manager (`aginies/virtui-manager`)
 - NetworkManager-HSP (`home-server-project/nm-hsp`) — x86_64 + aarch64
+- python3-docker (`docker/docker-py`) — Fedora 44 + AlmaLinux 10 noarch builds
 
 Each package keeps its own independent pipeline:
 
@@ -52,6 +53,7 @@ ghcr.io/home-server-project/cockpit-upside:stable
 ghcr.io/home-server-project/superfile:stable
 ghcr.io/home-server-project/virtui-manager:stable
 ghcr.io/home-server-project/nm-hsp:stable
+ghcr.io/home-server-project/python3-docker:stable
 ```
 
 AlmaLinux-specific channels:
