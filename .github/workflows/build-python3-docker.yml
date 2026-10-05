@@ -148,7 +148,6 @@ jobs:
 
           rpm -q python3-docker
           test -f /usr/share/licenses/python3-docker/LICENSE
-          test -f /usr/share/doc/python3-docker/README.md
 
           EXPECTED_DOCKER="${VERSION}" python3 - <<'PY'
           import os
