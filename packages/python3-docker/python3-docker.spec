@@ -37,7 +37,18 @@ export SETUPTOOLS_SCM_PRETEND_VERSION=%{version}
 %pyproject_save_files docker
 
 %check
-%pyproject_check_import
+# Docker SDK ships Windows-only named-pipe modules and an optional SSH module.
+# Check the installed Linux top-level package here; clean target validation below
+# separately verifies the installed RPM and its distro-provided dependencies.
+%pyproject_check_import -t
+PYTHONPATH=%{buildroot}%{python3_sitelib} python3 - <<'PY'
+import docker
+
+assert docker.__version__ == "%{version}"
+assert docker.DockerClient is not None
+assert callable(docker.from_env)
+assert docker.APIClient is not None
+PY
 
 %files -f %{pyproject_files}
 %license LICENSE
