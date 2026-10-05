@@ -89,6 +89,7 @@ jobs:
           extract_package superfile superfile
           extract_package nm-hsp nm-hsp
           extract_package virtui-manager virtui-manager
+          extract_package python3-docker python3-docker
           extract_package glances glances
           extract_package playit playit
           extract_package mergerfs mergerfs stable-v2
@@ -140,7 +141,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for package in cockpit-upside superfile nm-hsp virtui-manager; do
+          for package in cockpit-upside superfile nm-hsp virtui-manager python3-docker; do
             (
               cd "stable-set/${package}"
               sha256sum -c metadata/SHA256SUMS
@@ -157,17 +158,20 @@ jobs:
           SUPERFILE_RPM="$(find stable-set/superfile/rpms -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
           NM_HSP_RPM="$(find stable-set/nm-hsp/rpms -maxdepth 1 -type f -name 'nm-hsp-*.x86_64.rpm' -print -quit)"
           VIRTUI_RPM="$(find stable-set/virtui-manager/rpms -maxdepth 1 -type f -name 'virtui-manager-*.noarch.rpm' -print -quit)"
+          PYTHON_DOCKER_RPM="$(find stable-set/python3-docker/rpms -maxdepth 1 -type f -name 'python3-docker-*.fc44.noarch.rpm' -print -quit)"
 
           test -n "${UPSIDE_RPM}"
           test -n "${SUPERFILE_RPM}"
           test -n "${NM_HSP_RPM}"
           test -n "${VIRTUI_RPM}"
+          test -n "${PYTHON_DOCKER_RPM}"
 
           dnf install -y \
             "${UPSIDE_RPM}" \
             "${SUPERFILE_RPM}" \
             "${NM_HSP_RPM}" \
-            "${VIRTUI_RPM}"
+            "${VIRTUI_RPM}" \
+            "${PYTHON_DOCKER_RPM}"
 
       - name: Validate Fedora package set
         shell: bash
@@ -181,8 +185,10 @@ jobs:
           source stable-set/virtui-manager/metadata/package.env
           VIRTUI_VERSION="${VERSION}"
           VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
+          source stable-set/python3-docker/metadata/package.env
+          PYTHON_DOCKER_VERSION="${VERSION}"
 
-          rpm -q cockpit-upside superfile nm-hsp virtui-manager
+          rpm -q cockpit-upside superfile nm-hsp virtui-manager python3-docker
 
           test -f /usr/share/cockpit/upside/manifest.json
           test -f /usr/share/licenses/cockpit-upside/LICENSE
@@ -227,6 +233,8 @@ jobs:
 
           /usr/bin/vmc --help >/dev/null
 
+          EXPECTED_DOCKER="${PYTHON_DOCKER_VERSION}" python3 -c "import docker, os, requests, urllib3; print('docker', docker.__version__); assert docker.__version__ == os.environ['EXPECTED_DOCKER']"
+
           if find /usr/libexec/virtui-manager/python -type f -print0 \
               | xargs -0 file | grep -q 'ELF'; then
             echo 'ERROR: installed private VirtUI Python tree contains an ELF file' >&2
@@ -237,12 +245,14 @@ jobs:
           rpm -V superfile
           rpm -V nm-hsp
           rpm -V virtui-manager
+          rpm -V python3-docker
 
-          printf 'Validated Fedora 44: UPSide %s, Superfile %s, nm-hsp, VirtUI Manager %s, Textual %s\n' \
+          printf 'Validated Fedora 44: UPSide %s, Superfile %s, nm-hsp, VirtUI Manager %s, Textual %s, python3-docker %s\n' \
             "${UPSIDE_VERSION}" \
             "${SUPERFILE_VERSION}" \
             "${VIRTUI_VERSION}" \
-            "${VIRTUI_TEXTUAL_VERSION}"
+            "${VIRTUI_TEXTUAL_VERSION}" \
+            "${PYTHON_DOCKER_VERSION}"
 
       - name: Validation summary
         if: always()
@@ -251,7 +261,7 @@ jobs:
           {
             echo '## Fedora 44 stable package set'
             echo
-            echo '- Packages: UPSide, Superfile, nm-hsp, VirtUI Manager'
+            echo '- Packages: UPSide, Superfile, nm-hsp, VirtUI Manager, python3-docker'
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -320,7 +330,7 @@ jobs:
               dnf install -y rpm file
               dnf clean all
 
-              for package in cockpit-upside superfile nm-hsp virtui-manager glances playit; do
+              for package in cockpit-upside superfile nm-hsp virtui-manager python3-docker glances playit; do
                 (
                   cd "/stable-set/${package}"
                   sha256sum -c metadata/SHA256SUMS
@@ -332,6 +342,7 @@ jobs:
               SUPERFILE_RPM="$(find /stable-set/superfile/rpms -maxdepth 1 -type f -name "superfile-*.x86_64.rpm" -print -quit)"
               NM_HSP_RPM="$(find /stable-set/nm-hsp/rpms -maxdepth 1 -type f -name "nm-hsp-*.x86_64.rpm" -print -quit)"
               VIRTUI_RPM="$(find /stable-set/virtui-manager/rpms -maxdepth 1 -type f -name "virtui-manager-*.noarch.rpm" -print -quit)"
+              PYTHON_DOCKER_RPM="$(find /stable-set/python3-docker/rpms -maxdepth 1 -type f -name "python3-docker-*.el10.noarch.rpm" -print -quit)"
               GLANCES_RPM="$(find /stable-set/glances/rpms -maxdepth 1 -type f -name "glances-*.noarch.rpm" -print -quit)"
               PLAYIT_RPM="$(find /stable-set/playit/rpms -maxdepth 1 -type f -name "playit-*.x86_64.rpm" -print -quit)"
 
@@ -339,6 +350,7 @@ jobs:
               test -n "${SUPERFILE_RPM}"
               test -n "${NM_HSP_RPM}"
               test -n "${VIRTUI_RPM}"
+              test -n "${PYTHON_DOCKER_RPM}"
               test -n "${GLANCES_RPM}"
               test -n "${PLAYIT_RPM}"
 
@@ -347,6 +359,7 @@ jobs:
                 "${SUPERFILE_RPM}" \
                 "${NM_HSP_RPM}" \
                 "${VIRTUI_RPM}" \
+                "${PYTHON_DOCKER_RPM}" \
                 "${GLANCES_RPM}" \
                 "${PLAYIT_RPM}"
 
@@ -357,12 +370,14 @@ jobs:
               source /stable-set/virtui-manager/metadata/package.env
               VIRTUI_VERSION="${VERSION}"
               VIRTUI_TEXTUAL_VERSION="${TEXTUAL_VERSION}"
+              source /stable-set/python3-docker/metadata/package.env
+              PYTHON_DOCKER_VERSION="${VERSION}"
               source /stable-set/glances/metadata/package.env
               GLANCES_VERSION="${VERSION}"
               source /stable-set/playit/metadata/package.env
               PLAYIT_VERSION="${VERSION}"
 
-              rpm -q cockpit-upside superfile nm-hsp virtui-manager glances playit
+              rpm -q cockpit-upside superfile nm-hsp virtui-manager python3-docker glances playit
 
               test -f /usr/share/cockpit/upside/manifest.json
               test -f /usr/share/licenses/cockpit-upside/LICENSE
@@ -387,6 +402,8 @@ jobs:
               python3 -c "import importlib.metadata, os, gi, libvirt, markdown_it, netifaces, packaging, requests, textual, yaml; import vmanager.wrapper; virtui=importlib.metadata.version('virtui-manager'); textual_version=importlib.metadata.version('textual'); print('VirtUI Manager', virtui); print('Textual', textual_version); assert virtui == os.environ['EXPECTED_VIRTUI']; assert textual_version == os.environ['EXPECTED_TEXTUAL']"
 
               /usr/bin/vmc --help >/dev/null
+
+              EXPECTED_DOCKER="${PYTHON_DOCKER_VERSION}" python3 -c "import docker, os, requests, urllib3; print('docker', docker.__version__); assert docker.__version__ == os.environ['EXPECTED_DOCKER']"
 
               test -x /usr/bin/glances
               test -d /usr/libexec/glances/python/glances
@@ -415,14 +432,16 @@ jobs:
               rpm -V superfile
               rpm -V nm-hsp
               rpm -V virtui-manager
+              rpm -V python3-docker
               rpm -V glances
               rpm -V playit
 
-              printf "Validated AlmaLinux 10: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s, Glances %s, Playit %s\n" \
+              printf "Validated AlmaLinux 10: UPSide %s, Superfile %s, VirtUI Manager %s, Textual %s, python3-docker %s, Glances %s, Playit %s\n" \
                 "${UPSIDE_VERSION}" \
                 "${SUPERFILE_VERSION}" \
                 "${VIRTUI_VERSION}" \
                 "${VIRTUI_TEXTUAL_VERSION}" \
+                "${PYTHON_DOCKER_VERSION}" \
                 "${GLANCES_VERSION}" \
                 "${PLAYIT_VERSION}"
             '
@@ -506,7 +525,7 @@ jobs:
           {
             echo '## AlmaLinux 10 stable package set'
             echo
-            echo '- Packages: UPSide, Superfile, nm-hsp, VirtUI Manager, Glances, Playit'
+            echo '- Packages: UPSide, Superfile, nm-hsp, VirtUI Manager, python3-docker, Glances, Playit'
             echo '- Compatibility package: mergerfs x86-64-v2 with FUSE functional test'
             echo '- Result: ${{ job.status }}'
           } >> "${GITHUB_STEP_SUMMARY}"

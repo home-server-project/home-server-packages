@@ -54,6 +54,14 @@ Declared license: `LGPL-3.0-only`.
 
 The RPM build must preserve the upstream `COPYING` license text and retain the exact corresponding upstream source used for every published Glances RPM. Glances is packaged as an AlmaLinux 10 target package; normal runtime Python libraries come from AlmaLinux 10 and EPEL rather than a bundled dependency tree.
 
+## python3-docker
+
+Upstream: `https://github.com/docker/docker-py`
+
+Declared license: `Apache-2.0`.
+
+The RPM build must preserve the upstream `LICENSE` text and retain the exact corresponding upstream source used for every published python3-docker RPM. Fedora 44 and AlmaLinux 10 RPMs are built independently from the same pinned upstream commit so each package targets the Python ABI of its distribution. Runtime Requests and urllib3 libraries come from the target distribution rather than a bundled dependency tree.
+
 
 ## Playit
 

@@ -71,6 +71,19 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
+        "/^packages\\/python3-docker\\/package\\.env$/",
+      ],
+      "matchStrings": [
+        "PYTHON_DOCKER_VERSION=(?<currentValue>\\S+)\\s+PYTHON_DOCKER_COMMIT=(?<currentDigest>[a-f0-9]{40})",
+      ],
+      "packageNameTemplate": "docker/docker-py",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
         "/^packages\\/playit\\/package\\.env$/",
       ],
       "matchStrings": [
@@ -116,6 +129,7 @@
         "yorukot/superfile",
         "trapexit/mergerfs",
         "nicolargo/glances",
+        "docker/docker-py",
         "playit-cloud/playit-agent",
         "aginies/virtui-manager",
         "home-server-project/nm-hsp",

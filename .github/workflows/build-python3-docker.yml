@@ -1,0 +1,325 @@
+---
+name: Build python3-docker package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/python3-docker/**'
+      - '.github/workflows/build-python3-docker.yml'
+      - '.github/renovate.json5'
+      - 'LICENSE_POLICY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/python3-docker/**'
+      - '.github/workflows/build-python3-docker.yml'
+      - 'LICENSE_POLICY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python3-docker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build python3-docker - ${{ matrix.display_name }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44
+            display_name: Fedora 44
+            container: registry.fedoraproject.org/fedora:44
+          - id: el10
+            display_name: AlmaLinux 10
+            container: almalinux:10
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Prepare build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
+              echo 'ERROR: AlmaLinux CRB repository is not enabled.' >&2
+              exit 1
+            fi
+            dnf install -y epel-release
+          fi
+
+          dnf install -y             file             git             gzip             python3             python3-devel             python3-hatchling             python3-hatch-vcs             python3-pip             python3-requests             python3-urllib3             pyproject-rpm-macros             rpm-build             tar
+          dnf clean all
+
+      - name: Checkout package repository
+        uses: actions/checkout@v6
+
+      - name: Build python3-docker RPM
+        shell: bash
+        env:
+          HSP_TARGET: ${{ matrix.id }}
+        run: |
+          bash packages/python3-docker/build.sh
+
+      - name: Upload python3-docker build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: python3-docker-${{ matrix.id }}
+          path: out/python3-docker/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate python3-docker - ${{ matrix.display_name }}
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: fedora44
+            display_name: Fedora 44
+            container: registry.fedoraproject.org/fedora:44
+            dist_suffix: .fc44.noarch.rpm
+          - id: el10
+            display_name: AlmaLinux 10
+            container: almalinux:10
+            dist_suffix: .el10.noarch.rpm
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Prepare validation environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.id }}" == "el10" ]]; then
+            if ! dnf repolist --enabled | grep -Eiq '(^|[[:space:]])crb([[:space:]]|$)'; then
+              echo 'ERROR: AlmaLinux CRB repository is not enabled.' >&2
+              exit 1
+            fi
+            dnf install -y epel-release
+          fi
+
+          dnf install -y rpm file
+          dnf clean all
+
+      - name: Download exact python3-docker build artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: python3-docker-${{ matrix.id }}
+          path: package
+
+      - name: Verify, install, and exercise exact RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          (
+            cd package
+            sha256sum -c metadata/SHA256SUMS
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+          RPM_FILE="$(find package/rpms -maxdepth 1 -type f -name "python3-docker-*${{ matrix.dist_suffix }}" -print -quit)"
+          test -n "${RPM_FILE}"
+
+          source package/metadata/package.env
+          [[ "${PACKAGE}" == "python3-docker" ]]
+          [[ "${PACKAGE_CHANNEL}" == "${{ matrix.id }}-noarch" ]]
+          [[ "${TARGET}" == "${{ matrix.id }}" ]]
+
+          dnf install -y "${RPM_FILE}"
+
+          rpm -q python3-docker
+          test -f /usr/share/licenses/python3-docker/LICENSE
+          test -f /usr/share/doc/python3-docker/README.md
+
+          EXPECTED_DOCKER="${VERSION}" python3 - <<'PY'
+          import os
+
+          import docker
+          import requests
+          import urllib3
+
+          print("docker", docker.__version__)
+          print("requests", requests.__version__)
+          print("urllib3", urllib3.__version__)
+
+          assert docker.__version__ == os.environ["EXPECTED_DOCKER"]
+          assert callable(docker.from_env)
+          assert docker.APIClient is not None
+          PY
+
+          if find /usr/lib/python*/site-packages/docker -type f -print0               | xargs -0 file | grep -q 'ELF'; then
+            echo 'ERROR: python3-docker package contains an unexpected ELF file' >&2
+            exit 1
+          fi
+
+          rpm -V python3-docker
+
+          mkdir -p "package/validation/${{ matrix.id }}"
+          cat /etc/os-release > "package/validation/${{ matrix.id }}/os-release.txt"
+          rpm -q python3-docker > "package/validation/${{ matrix.id }}/python3-docker.txt"
+          python3 -c 'import docker; print(docker.__version__)'             > "package/validation/${{ matrix.id }}/docker-version.txt"
+          sha256sum "${RPM_FILE}" > "package/validation/${{ matrix.id }}/rpm-sha256.txt"
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: python3-docker-validation-${{ matrix.id }}
+          path: package/validation/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified python3-docker artifact
+    needs:
+      - build
+      - validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download Fedora 44 package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: python3-docker-fedora44
+          path: fedora44
+
+      - name: Download AlmaLinux 10 package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: python3-docker-el10
+          path: el10
+
+      - name: Assemble dual-distro stable artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source fedora44/metadata/package.env
+          FEDORA_VERSION="${VERSION}"
+          FEDORA_COMMIT="${UPSTREAM_COMMIT}"
+          FEDORA_LICENSE="${LICENSE}"
+          FEDORA_UPSTREAM="${UPSTREAM}"
+
+          source el10/metadata/package.env
+          [[ "${VERSION}" == "${FEDORA_VERSION}" ]]
+          [[ "${UPSTREAM_COMMIT}" == "${FEDORA_COMMIT}" ]]
+          [[ "${LICENSE}" == "${FEDORA_LICENSE}" ]]
+          [[ "${UPSTREAM}" == "${FEDORA_UPSTREAM}" ]]
+
+          cmp fedora44/source/package.env el10/source/package.env
+          cmp fedora44/source/python3-docker.spec el10/source/python3-docker.spec
+          cmp fedora44/licenses/LICENSE el10/licenses/LICENSE
+
+          mkdir -p package/rpms package/source package/licenses package/metadata
+
+          cp fedora44/rpms/*.rpm package/rpms/
+          cp el10/rpms/*.rpm package/rpms/
+          cp -a fedora44/source/. package/source/
+          cp -a fedora44/licenses/. package/licenses/
+
+          cp fedora44/metadata/package.env package/metadata/fedora44-package.env
+          cp fedora44/metadata/rpm-files.txt package/metadata/fedora44-rpm-files.txt
+          cp fedora44/metadata/rpm-requires.txt package/metadata/fedora44-rpm-requires.txt
+          cp fedora44/metadata/rpm-info.txt package/metadata/fedora44-rpm-info.txt
+          cp fedora44/metadata/rpm-arch.txt package/metadata/fedora44-rpm-arch.txt
+          cp fedora44/metadata/rpm-installed-size.txt package/metadata/fedora44-rpm-installed-size.txt
+          cp fedora44/metadata/rpm-release.txt package/metadata/fedora44-rpm-release.txt
+
+          cp el10/metadata/package.env package/metadata/el10-package.env
+          cp el10/metadata/rpm-files.txt package/metadata/el10-rpm-files.txt
+          cp el10/metadata/rpm-requires.txt package/metadata/el10-rpm-requires.txt
+          cp el10/metadata/rpm-info.txt package/metadata/el10-rpm-info.txt
+          cp el10/metadata/rpm-arch.txt package/metadata/el10-rpm-arch.txt
+          cp el10/metadata/rpm-installed-size.txt package/metadata/el10-rpm-installed-size.txt
+          cp el10/metadata/rpm-release.txt package/metadata/el10-rpm-release.txt
+
+          cat > package/metadata/package.env <<EOF_META
+          PACKAGE=python3-docker
+          VERSION=${FEDORA_VERSION}
+          UPSTREAM_COMMIT=${FEDORA_COMMIT}
+          LICENSE=${FEDORA_LICENSE}
+          UPSTREAM=${FEDORA_UPSTREAM}
+          PACKAGE_CHANNEL=fedora44-el10-noarch
+          EOF_META
+
+          (
+            cd package
+            find rpms source licenses metadata               -type f               ! -name SHA256SUMS               ! -name rpm-sha256.txt               -print0               | sort -z               | xargs -0 sha256sum > metadata/SHA256SUMS
+            sha256sum rpms/*.rpm > metadata/rpm-sha256.txt
+          )
+
+          sha256sum -c package/metadata/SHA256SUMS
+          (
+            cd package
+            sha256sum -c metadata/rpm-sha256.txt
+          )
+
+      - name: Read package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source package/metadata/package.env
+
+          echo "PYTHON_DOCKER_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "PYTHON_DOCKER_COMMIT=${UPSTREAM_COMMIT}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/python3-docker" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build package OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > package/Containerfile <<EOF_CONTAINER
+          FROM scratch
+          LABEL org.opencontainers.image.title="python3-docker package artifact" \
+                org.opencontainers.image.description="Verified Home Server Project Docker SDK for Python RPMs for Fedora 44 and AlmaLinux 10, source, license, and build metadata" \
+                org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+                org.opencontainers.image.version="${PYTHON_DOCKER_VERSION}" \
+                io.home-server-project.package="python3-docker" \
+                io.home-server-project.upstream-commit="${PYTHON_DOCKER_COMMIT}" \
+                io.home-server-project.channel="fedora44-el10-noarch"
+          COPY rpms /rpms
+          COPY source /source
+          COPY licenses /licenses
+          COPY metadata /metadata
+          EOF_CONTAINER
+
+          docker build             --file package/Containerfile             --tag "${PACKAGE_IMAGE}:${PYTHON_DOCKER_VERSION}-1.hsp"             --tag "${PACKAGE_IMAGE}:stable"             package
+
+      - name: Publish immutable and stable tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${PACKAGE_IMAGE}:${PYTHON_DOCKER_VERSION}-1.hsp"
+          docker push "${PACKAGE_IMAGE}:stable"
