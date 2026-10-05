@@ -76,7 +76,7 @@ cp "${PKG_DIR}/python3-docker.spec" "${RPMBUILD_DIR}/SPECS/python3-docker.spec"
 
 rpmbuild -bb     --define "_topdir ${RPMBUILD_DIR}"     --define "python_docker_version ${PYTHON_DOCKER_VERSION}"     "${RPMBUILD_DIR}/SPECS/python3-docker.spec"
 
-find "${RPMBUILD_DIR}/RPMS" -type f -name 'python3-docker-*.noarch.rpm'     -exec cp -v {} "${OUT_DIR}/rpms/" ;
+find "${RPMBUILD_DIR}/RPMS" -type f -name 'python3-docker-*.noarch.rpm'     -exec cp -v {} "${OUT_DIR}/rpms/" \;
 
 RPM_FILE="$(find "${OUT_DIR}/rpms" -maxdepth 1 -type f -name 'python3-docker-*.noarch.rpm' -print -quit)"
 test -n "${RPM_FILE}"
