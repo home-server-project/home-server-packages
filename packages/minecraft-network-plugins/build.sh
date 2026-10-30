@@ -46,6 +46,7 @@ grep -Fq 'GNU AFFERO GENERAL PUBLIC LICENSE' "${work}/limbo-source/LICENSE"
 cp "${work}/limbo-source/LICENSE" "${output}/licenses/LimboAPI-AGPL-3.0-only.txt"
 tar --exclude='.git' -C "${work}" -czf "${output}/source/limboapi-${limbo_commit}.tar.gz" limbo-source
 cp -a "${package_dir}/velocity-lobby" "${output}/source/"
+rm -f "${output}/source/velocity-lobby/.gitignore"
 cp "${package_dir}/velocity-lobby/LICENSE" "${output}/licenses/JustVoxel-Lobby-Apache-2.0.txt"
 cp "${package_dir}/"*.py "${package_dir}/build.sh" "${package_dir}/package.env" "${package_dir}/limboapi-update.json" "${output}/source/"
 cp "${package_dir}/package.env" "${output}/metadata/package.env"
