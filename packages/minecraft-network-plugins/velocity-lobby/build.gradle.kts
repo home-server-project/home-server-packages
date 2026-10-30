@@ -17,10 +17,7 @@ tasks.withType<JavaCompile>().configureEach {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
-    exclusiveContent {
-        forRepository { maven("https://repo.opencollab.dev/main/") }
-        filter { includeModule("org.geysermc.floodgate", "api") }
-    }
+    maven("https://repo.opencollab.dev/main/")
 }
 
 val limboApiJar = providers.gradleProperty("limboApiJar")
