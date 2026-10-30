@@ -1,0 +1,9 @@
+<metadata>
+  <groupId>org.geysermc.floodgate</groupId><artifactId>api</artifactId><version>2.2.5-SNAPSHOT</version>
+  <versioning><snapshotVersions>
+    <snapshotVersion><extension>jar</extension><value>2.2.5-20260917.145236-21</value></snapshotVersion>
+    <snapshotVersion><extension>pom</extension><value>2.2.5-20260917.145236-21</value></snapshotVersion>
+    <snapshotVersion><classifier>sources</classifier><extension>jar</extension><value>2.2.5-20260918.145236-22</value></snapshotVersion>
+    <snapshotVersion><extension>jar</extension><value>2.3.0-20261017.145236-99</value></snapshotVersion>
+  </snapshotVersions></versioning>
+</metadata>

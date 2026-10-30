@@ -1,0 +1,16 @@
+{
+  "repository": "Elytrium/LimboAPI",
+  "release_tag": "dev-build",
+  "source_commit": "bfef5799f21d73a80155035c3430f6654aa6b9f8",
+  "release_id": 390180560,
+  "release_name": "Dev-build bfef579",
+  "asset_id": 568567016,
+  "filename": "limboapi-1.1.27-SNAPSHOT.jar",
+  "version": "1.1.27-SNAPSHOT",
+  "published_at": "2026-09-16T18:44:41Z",
+  "size": 3339167,
+  "sha256": "5d541984b90ca7a88eb49ca5f8cc3a803f5ecdfa6d7ed30b605b72ff94156e40",
+  "url": "https://api.github.com/repos/Elytrium/LimboAPI/releases/assets/568567016",
+  "compatibility": "Minecraft 26.3 / Velocity protocol 777",
+  "license": "AGPL-3.0-only"
+}

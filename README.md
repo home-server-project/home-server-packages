@@ -16,6 +16,7 @@ Implemented and published package pipelines:
 - VirtUI Manager (`aginies/virtui-manager`)
 - NetworkManager-HSP (`home-server-project/nm-hsp`) — x86_64 + aarch64
 - python3-docker (`docker/docker-py`) — Fedora 44 + AlmaLinux 10 noarch builds
+- Minecraft Network Plugins — LimboAPI and JustVoxel Lobby in a scratch OCI artifact
 
 Each package keeps its own independent pipeline:
 
@@ -64,7 +65,13 @@ ghcr.io/home-server-project/playit:stable
 ghcr.io/home-server-project/mergerfs:stable-v2
 ```
 
-Each package also publishes an immutable versioned tag.
+Minecraft plugin channel (validated directly as an OCI payload, without RPM installation):
+
+```text
+ghcr.io/home-server-project/minecraft-network-plugins:stable
+```
+
+Each package also publishes an immutable versioned tag. Minecraft Network Plugins publishes an immutable composition tag.
 
 ## Automation
 
@@ -73,6 +80,46 @@ Upstream updates are automatic.
 Exact upstream versions and commits, and private dependency locks where required, are maintained in this repository. A package update must build and pass its required validation before it is promoted to its stable channel.
 
 The shared stable-package validation then checks the already-published package set against the current Fedora and AlmaLinux environments before the scheduled operating-system image builds.
+
+## Minecraft Network Plugins
+
+Home Server Packages owns the maintained lobby source and build in
+[`packages/minecraft-network-plugins/`](packages/minecraft-network-plugins/).
+The runtime payload is `/artifacts/limboapi.jar` (LimboAPI) and
+`/artifacts/justvoxel-lobby.jar` (JustVoxel Lobby), with `/metadata/`, `/source/`
+and `/licenses/`. Velocity and Floodgate API are compile-only inputs for
+JustVoxel Lobby and are never included in the runtime payload.
+
+LimboAPI uses compatible `dev-build` tracking because normal 1.1.26 is too old
+for the current Minecraft 26.3 target. Its mutable tag is tracked by exact full
+source commit, release/asset identity, size and SHA-256 in
+`limboapi-update.json`. Changes arrive through review PRs, including the old and
+new full commits and a compatibility review note.
+
+Velocity uses only exact reviewed `VELOCITY_VERSION` + `VELOCITY_BUILD` in
+`package.env` (initially 4.3.1 build 45). The build queries the official PaperMC
+Fill API for that exact selection, requires STABLE, and verifies its official
+artifact host, size and SHA-256. Only the updater discovers newer STABLE builds.
+Floodgate API uses an exact timestamped 2.2.5 snapshot selection from official
+OpenCollab Maven metadata. Its mutable `2.2.5-SNAPSHOT` coordinate is never
+resolved by the build; the exact artifact is checked against OpenCollab's
+SHA-256 sidecar and used only for compilation.
+
+The scheduled or manually dispatched package updater proposes all three inputs
+on a dedicated branch through a PR to `main`. Unchanged inputs produce no PR.
+The updater never publishes. Package builds never choose newer versions.
+The updater requires the `MINECRAFT_NETWORK_UPDATE_TOKEN` repository secret
+(a bot token with repository contents and pull request write access), so its
+PRs trigger the build workflow. It writes only the two package state files;
+its branch is `automation/minecraft-network-plugins`.
+Java 25 builds run the lobby's Gradle tests using a checksum-verified Gradle
+distribution. PRs build and validate the exact uploaded payload without publishing.
+Successful main-branch build and validation publish
+`ghcr.io/home-server-project/minecraft-network-plugins:stable` and an immutable
+composition tag. Published checksums, plugin identities and dependency
+non-bundling are also checked by scheduled stable validation.
+
+JustVoxel consumption of this channel will be switched in a separate task.
 
 ## Consumers
 

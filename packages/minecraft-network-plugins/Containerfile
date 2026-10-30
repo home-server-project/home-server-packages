@@ -1,0 +1,9 @@
+FROM scratch
+LABEL org.opencontainers.image.title="Minecraft Network Plugins" \
+      org.opencontainers.image.source="https://github.com/home-server-project/home-server-packages" \
+      org.opencontainers.image.licenses="AGPL-3.0-only AND Apache-2.0" \
+      io.home-server-project.package="minecraft-network-plugins"
+COPY artifacts /artifacts
+COPY metadata /metadata
+COPY source /source
+COPY licenses /licenses

@@ -43,6 +43,7 @@ jobs:
             playit
             mergerfs
             nm-hsp
+            minecraft-network-plugins
           )
 
           retention_days=45

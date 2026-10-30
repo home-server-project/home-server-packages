@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Checkout package validators
+        uses: actions/checkout@v6
+
       - name: Log in to GHCR
         shell: bash
         env:
@@ -93,6 +96,20 @@ jobs:
           extract_package glances glances
           extract_package playit playit
           extract_package mergerfs mergerfs stable-v2
+
+          # This scratch artifact contains JARs, not RPMs. Validate its payload directly.
+          image=ghcr.io/home-server-project/minecraft-network-plugins:stable
+          dest=stable-set/minecraft-network-plugins
+          docker pull "${image}"
+          mkdir -p "${dest}"
+          cid="$(docker create "${image}" /bin/true)"
+          trap 'docker rm -f "${cid}" >/dev/null 2>&1 || true' EXIT
+          for directory in artifacts metadata source licenses; do
+            docker cp "${cid}:/${directory}" "${dest}/"
+          done
+          docker rm "${cid}" >/dev/null
+          trap - EXIT
+          python3 -B packages/minecraft-network-plugins/validate.py "${dest}"
 
           cat stable-set/package-set.tsv
 

@@ -1,0 +1,65 @@
+---
+name: Update Minecraft Network Plugin dependencies
+
+on:
+  schedule:
+    - cron: '20 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-minecraft-network-plugins
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.MINECRAFT_NETWORK_UPDATE_TOKEN }}
+      - name: Test updater
+        run: python3 -B -m unittest discover -s packages/minecraft-network-plugins/tests -v
+      - name: Discover reviewed dependency updates
+        env:
+          GH_TOKEN: ${{ secrets.MINECRAFT_NETWORK_UPDATE_TOKEN }}
+        run: python3 -B packages/minecraft-network-plugins/update.py --summary "${RUNNER_TEMP}/minecraft-network-update.md"
+      - name: Open or update dependency PR
+        env:
+          GH_TOKEN: ${{ secrets.MINECRAFT_NETWORK_UPDATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          state=(packages/minecraft-network-plugins/limboapi-update.json packages/minecraft-network-plugins/package.env)
+          if git diff --quiet -- "${state[@]}"; then
+            echo 'Upstream state unchanged.'
+            exit 0
+          fi
+          # Refuse unexpected changes; only the updater's two state files may be staged.
+          while IFS= read -r path; do
+            [[ "${path}" == "${state[0]}" || "${path}" == "${state[1]}" ]]
+          done < <(git diff --name-only)
+          branch=automation/minecraft-network-plugins
+          git switch -c "${branch}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "${state[@]}"
+          git commit -m 'Update reviewed Minecraft Network dependencies'
+          # Force-with-lease updates only this dedicated automation branch.
+          remote_sha="$(git ls-remote origin "refs/heads/${branch}" | cut -f1)"
+          git push --force-with-lease="refs/heads/${branch}:${remote_sha}" origin "HEAD:refs/heads/${branch}"
+          pr="$(gh pr list --base main --head "${branch}" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "${pr}" ]]; then
+            gh pr edit "${pr}" --title 'Update Minecraft Network dependencies' \
+              --body-file "${RUNNER_TEMP}/minecraft-network-update.md"
+          else
+            gh pr create --base main --head "${branch}" --title 'Update Minecraft Network dependencies' \
+              --body-file "${RUNNER_TEMP}/minecraft-network-update.md"
+          fi
