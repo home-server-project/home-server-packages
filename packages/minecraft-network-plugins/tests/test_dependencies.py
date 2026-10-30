@@ -20,7 +20,7 @@ import validate
 def velocity(build=45, version='4.3.1', channel='STABLE'):
     digest = 'a' * 64
     name = f'velocity-{version}-{build}.jar'
-    return dict(id=build, version={'id': version}, channel=channel, downloads={'server:default':
+    return dict(id=build, channel=channel, downloads={'server:default':
         dict(name=name, size=20, checksums={'sha256': digest},
              url=f'https://fill-data.papermc.io/v1/objects/{digest}/{name}')})
 
@@ -66,6 +66,19 @@ class LimboTests(unittest.TestCase):
 
 
 class VelocityTests(unittest.TestCase):
+    def test_version_comes_from_request_context(self):
+        item = velocity()
+        self.assertNotIn('version', item)
+        result = u.velocity_state('4.3.1', item)
+        self.assertEqual((result['version'], result['build']), ('4.3.1', 45))
+
+    def test_safe_filename_need_not_encode_version_and_build(self):
+        item = velocity()
+        artifact = item['downloads']['server:default']
+        artifact['name'] = 'velocity-4.3.1+release.jar'
+        artifact['url'] = f"https://fill-data.papermc.io/v1/objects/{artifact['checksums']['sha256']}/{artifact['name']}"
+        self.assertEqual(u.velocity_state('4.3.1', item)['filename'], artifact['name'])
+
     def test_select_only_newest_stable(self):
         builds = [velocity(99, channel='EXPERIMENTAL'), velocity(45), velocity(46)]
         result = update.stable_velocity('4.3.1', builds)
@@ -80,30 +93,72 @@ class VelocityTests(unittest.TestCase):
         responses = {u.PROJECT: {'project': {'id': 'velocity'}, 'versions': {'4': ['4.4.0', '4.3.1']}},
                      u.PROJECT+'/versions/4.4.0/builds': [velocity(1, '4.4.0', 'ALPHA')],
                      u.PROJECT+'/versions/4.3.1/builds': [velocity(45), velocity(46)]}
-        self.assertEqual(update.discover_velocity(responses.__getitem__)['build'], 46)
+        result = update.discover_velocity(responses.__getitem__)
+        self.assertEqual((result['version'], result['build']), ('4.3.1', 46))
+        responses[u.PROJECT+'/versions/4.4.0/builds'].extend([velocity(2, '4.4.0'), velocity(3, '4.4.0')])
+        result = update.discover_velocity(responses.__getitem__)
+        self.assertEqual((result['version'], result['build']), ('4.4.0', 3))
 
     def test_exact_selection_checks_identity_and_channel(self):
         urls = []
         def read(url):
             urls.append(url)
-            return velocity()
-        self.assertEqual(u.exact_velocity('4.3.1', 45, read)['build'], 45)
-        self.assertEqual(urls, [u.PROJECT+'/versions/4.3.1/builds/45'])
-        for item in [velocity(46), velocity(version='4.3.2'), velocity(channel='BETA')]:
-            with self.assertRaises(ValueError):
-                u.exact_velocity('4.3.1', 45, lambda url: item)
+            return [velocity(46), velocity(), velocity(44)]
+        env = u.load_env(PACKAGE)
+        self.assertEqual((env['VELOCITY_VERSION'], env['VELOCITY_BUILD']), ('4.3.1', '45'))
+        self.assertEqual(u.exact_velocity(env['VELOCITY_VERSION'], int(env['VELOCITY_BUILD']), read)['build'], 45)
+        self.assertEqual(urls, [u.PROJECT+'/versions/4.3.1/builds'])
+        missing_id = velocity()
+        del missing_id['id']
+        for builds in [[], [velocity(46)], [missing_id], [velocity('45')],
+                       [velocity(), velocity()], [velocity(channel='BETA')],
+                       {}, [None], [velocity(), None]]:
+            with self.subTest(builds=builds), self.assertRaises(ValueError):
+                u.exact_velocity('4.3.1', 45, lambda url: builds)
+
+    def test_invalid_version_context_and_build_ids(self):
+        for version in ['../4.3.1', '4.3.1/evil', '4.3.1?query', '4.3.1-SNAPSHOT']:
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                u.exact_velocity(version, 45, lambda url: self.fail('Invalid request'))
+        for build in [None, 0, -1, True, 45.0, '45']:
+            with self.subTest(build=build), self.assertRaises(ValueError):
+                u.velocity_state('4.3.1', velocity(build))
+            with self.subTest(build=build), self.assertRaises(ValueError):
+                u.exact_velocity('4.3.1', build, lambda url: self.fail('Invalid request'))
 
     def test_bad_artifact_metadata(self):
-        for key, value in [('name', '../velocity.jar'), ('size', 0), ('size', True),
-                           ('checksums', {'sha256': 'bad'}), ('url', 'https://evil.example/a'),
+        for key, value in [('name', '../velocity.jar'), ('name', 'velocity-.jar'),
+                           ('name', 'velocity-test.jar/evil'), ('name', 'velocity-test.jar\n'),
+                           ('size', 0), ('size', True), ('size', -1), ('size', 20.0),
+                           ('size', u.MAX_JAR_SIZE + 1), ('size', None),
+                           ('checksums', None), ('checksums', {}),
+                           ('checksums', {'sha256': 'bad'}), ('checksums', {'sha256': 'A'*64}),
+                           ('checksums', {'sha256': 'z'*64}), ('url', 'https://evil.example/a'),
                            ('url', 'https://fill-data.papermc.io.evil.example/a'),
                            ('url', 'http://fill-data.papermc.io/a')]:
             item = velocity()
             item['downloads']['server:default'][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 u.velocity_state('4.3.1', item)
-        with self.assertRaises(ValueError):
-            u.velocity_state('4.3.1', dict(id=45, version='4.3.1', channel='STABLE', downloads={}))
+        for downloads in [None, [], {}, {'server:default': None}]:
+            item = velocity()
+            item['downloads'] = downloads
+            with self.subTest(downloads=downloads), self.assertRaises(ValueError):
+                u.velocity_state('4.3.1', item)
+
+    def test_url_manipulation_rejected(self):
+        official = velocity()['downloads']['server:default']['url']
+        for url in [official+'?query=1', official+'#fragment', official+'?', official+'#',
+                    official.replace('/v1/objects/', '/v1/objects/../objects/'),
+                    official.replace('/v1/objects/', '/v1/%6fbjects/'),
+                    official.replace('a'*64, 'b'*64), official.replace('.jar', '-other.jar'),
+                    official.replace('fill-data.papermc.io', 'fill-data.papermc.io:443'),
+                    official.replace('fill-data.papermc.io', 'user@fill-data.papermc.io'),
+                    '\n'+official, official+'\t', official+'é', None]:
+            item = velocity()
+            item['downloads']['server:default']['url'] = url
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                u.velocity_state('4.3.1', item)
 
     def test_download_verifies_size_and_checksum(self):
         pin = u.velocity_state('4.3.1', velocity())
@@ -121,6 +176,19 @@ class VelocityTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         u.download(pin, 'velocity', dest)
                     self.assertFalse(dest.exists())
+                self.assertFalse(dest.with_suffix('.part').exists())
+
+    def test_download_rejects_untrusted_final_host(self):
+        pin = u.velocity_state('4.3.1', velocity())
+        response = io.BytesIO(b'j'*20)
+        response.geturl = lambda: 'https://evil.example/velocity.jar'
+        with tempfile.TemporaryDirectory() as directory, patch.object(u, 'open_url', return_value=response) as opened:
+            dest = Path(directory)/'velocity.jar'
+            with self.assertRaisesRegex(ValueError, 'final artifact host'):
+                u.download(pin, 'velocity', dest)
+            opened.assert_called_once_with(pin['url'], binary=True)
+            self.assertFalse(dest.exists())
+            self.assertFalse(dest.with_suffix('.part').exists())
 
 
 class FloodgateTests(unittest.TestCase):

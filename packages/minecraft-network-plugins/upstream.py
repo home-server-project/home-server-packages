@@ -44,7 +44,9 @@ def validate_pin(pin, kind):
         require(pin.get('project') == 'velocity' and pin.get('channel') == 'STABLE', 'Only STABLE Velocity is allowed')
         require(matches(r'[0-9]+(?:\.[0-9]+){1,3}', pin.get('version')), 'Invalid stable Velocity version')
         require(type(pin.get('build')) is int and pin['build'] > 0, 'Invalid Velocity build')
-        require(pin.get('filename') == f"velocity-{pin['version']}-{pin['build']}.jar", 'Invalid Velocity filename')
+        require(matches(r'velocity-[A-Za-z0-9.+-]+\.jar', pin.get('filename')), 'Invalid Velocity filename')
+        url = pin.get('url')
+        require(isinstance(url, str) and all(32 < ord(c) < 127 for c in url), 'Invalid Velocity download URL')
         require(pin.get('url') == f"https://fill-data.papermc.io/v1/objects/{pin['sha256']}/{pin['filename']}",
                 'Untrusted PaperMC download metadata')
         require(pin.get('metadata_url') == f"{PROJECT}/versions/{pin['version']}/builds/{pin['build']}",
@@ -131,8 +133,7 @@ def load_env(directory):
 
 def velocity_state(version, build):
     require(isinstance(build, dict), 'Invalid Fill build')
-    identity = build.get('version')
-    require((identity.get('id') if isinstance(identity, dict) else identity) == version, 'Velocity version mismatch')
+    # The version comes from the requested builds collection, not the build object.
     require(build.get('channel') == 'STABLE', 'Velocity must be STABLE')
     downloads = build.get('downloads')
     require(isinstance(downloads, dict), 'Missing Velocity downloads')
@@ -147,7 +148,13 @@ def velocity_state(version, build):
 
 
 def exact_velocity(version, build, read=read_json):
-    state = velocity_state(version, read(f'{PROJECT}/versions/{version}/builds/{build}'))
+    require(matches(r'[0-9]+(?:\.[0-9]+){1,3}', version), 'Invalid stable Velocity version')
+    require(type(build) is int and build > 0, 'Invalid Velocity build')
+    builds = read(f'{PROJECT}/versions/{version}/builds')
+    require(isinstance(builds, list) and all(isinstance(b, dict) for b in builds), 'Invalid Fill builds')
+    selected = [b for b in builds if b.get('id') == build]
+    require(len(selected) == 1, 'Missing or ambiguous Velocity build')
+    state = velocity_state(version, selected[0])
     require(state['build'] == build, 'Velocity build mismatch')
     return state
 
