@@ -331,11 +331,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          sudo podman run --rm \
+          sudo podman run --rm -i \
             --platform linux/amd64 \
             -v "${GITHUB_WORKSPACE}/stable-set:/stable-set:ro" \
             "${ALMA_STANDARD_REF}" \
-            /bin/bash -lc '
+            /bin/bash -s <<'ALMA_VALIDATE'
               set -euo pipefail
 
               if ! dnf repolist --enabled | grep -Eiq "(^|[[:space:]])crb([[:space:]]|$)"; then
@@ -461,7 +461,7 @@ jobs:
                 "${PYTHON_DOCKER_VERSION}" \
                 "${GLANCES_VERSION}" \
                 "${PLAYIT_VERSION}"
-            '
+          ALMA_VALIDATE
 
       - name: Validate mergerfs x86-64-v2
         shell: bash
