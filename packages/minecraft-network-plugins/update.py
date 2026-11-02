@@ -6,42 +6,52 @@ import json
 from pathlib import Path
 import tempfile
 from upstream import GITHUB, PROJECT, MAX_JAR_SIZE, open_url, read_json, require, matches, validate_pin, load_pin, load_env, velocity_state, MAVEN, read_bytes, parse_floodgate, newer_floodgate, newer_velocity, acquire_floodgate
+from upstream import STABLE_LIMBO_TAG
 
 
-def dev_commit(read=read_json):
-    obj = read(f'{GITHUB}/git/ref/tags/dev-build')['object']
+def tag_commit(tag, read=read_json):
+    require(matches(STABLE_LIMBO_TAG, tag), 'Invalid stable LimboAPI tag')
+    response = read(f'{GITHUB}/git/ref/tags/{tag}')
     for _ in range(5):
-        require(matches(r'[0-9a-f]{40}', obj.get('sha')), 'Invalid full dev-build SHA')
+        require(isinstance(response, dict) and isinstance(response.get('object'), dict), 'Invalid Git tag object')
+        obj = response['object']
+        require(matches(r'[0-9a-f]{40}', obj.get('sha')), 'Invalid full tag SHA')
         if obj.get('type') == 'commit':
             return obj['sha']
-        require(obj.get('type') == 'tag', 'dev-build must resolve to a commit')
-        obj = read(f"{GITHUB}/git/tags/{obj['sha']}")['object']
+        require(obj.get('type') == 'tag', 'Tag must resolve to a commit')
+        response = read(f"{GITHUB}/git/tags/{obj['sha']}")
     raise ValueError('Too many annotated tag indirections')
 
 
 def limbo_state(commit, release, previous, hash_asset=None):
-    require(release.get('tag_name') == 'dev-build' and release.get('draft') is False,
+    require(isinstance(release, dict) and release.get('draft') is False and release.get('prerelease') is False,
             'Invalid LimboAPI release')
+    tag = release.get('tag_name')
+    require(matches(STABLE_LIMBO_TAG, tag), 'Invalid stable LimboAPI tag')
     require(matches(r'[0-9a-f]{40}', commit), 'Full source commit required')
     require(isinstance(release.get('assets'), list) and all(isinstance(a, dict) for a in release['assets']),
             'Invalid release assets')
     assets = [a for a in release['assets'] if matches(r'limboapi-[0-9][A-Za-z0-9.+-]*\.jar', a.get('name'))]
     require(len(assets) == 1, 'Missing or ambiguous LimboAPI plugin asset')
     asset = assets[0]
+    require(asset['name'] == f'limboapi-{tag}.jar', 'LimboAPI stable tag/filename mismatch')
     require(asset.get('state') == 'uploaded', 'LimboAPI asset is not uploaded')
     digest = asset.get('digest')
     if digest is not None:
         require(matches(r'sha256:[0-9a-f]{64}', digest), 'Invalid GitHub SHA-256 digest')
         digest = digest[7:]
-    else:
-        require(hash_asset is not None, 'Asset without upstream digest must be hashed')
-        digest = hash_asset(asset)
-    state = dict(repository='Elytrium/LimboAPI', release_tag='dev-build', source_commit=commit,
-                 release_id=release['id'], release_name=release['name'], asset_id=asset['id'],
-                 filename=asset['name'], version=asset['name'][9:-4], published_at=release['published_at'],
-                 size=asset['size'], sha256=digest, url=asset['url'], license=previous['license'],
+    state = dict(repository='Elytrium/LimboAPI', release_tag=tag, source_commit=commit,
+                 release_id=release.get('id'), release_name=release.get('name'), asset_id=asset.get('id'),
+                 filename=asset['name'], version=tag, published_at=release.get('published_at'),
+                 size=asset.get('size'), sha256=digest if digest is not None else '0' * 64,
+                 url=asset.get('url'), license=previous['license'],
                  compatibility=previous['compatibility'] if commit == previous['source_commit'] else
                  'Requires review: Minecraft 26.3 compatibility has not been confirmed for this commit')
+    # Validate identity, URL and size before the verified hashing fallback can download.
+    validate_pin(state, 'limboapi')
+    if digest is None:
+        require(hash_asset is not None, 'Asset without upstream digest must be hashed')
+        state['sha256'] = hash_asset(asset)
     return validate_pin(state, 'limboapi')
 
 
@@ -57,6 +67,12 @@ def hash_limbo_asset(asset):
             digest.update(chunk)
     require(size == asset['size'], 'Asset size mismatch')
     return digest.hexdigest()
+
+
+def discover_limbo(previous, read=read_json, hash_asset=hash_limbo_asset):
+    release = read(f'{GITHUB}/releases/latest')
+    require(isinstance(release, dict), 'Invalid LimboAPI release')
+    return limbo_state(tag_commit(release.get('tag_name'), read), release, previous, hash_asset)
 
 
 def stable_velocity(version, builds):
@@ -100,15 +116,12 @@ def main():
     args = parser.parse_args()
     env = load_env(args.directory)
     old_limbo = load_pin(args.directory, 'limboapi')
-    commit = dev_commit()
-    new_limbo = limbo_state(commit, read_json(f'{GITHUB}/releases/tags/dev-build'), old_limbo, hash_limbo_asset)
+    new_limbo = discover_limbo(old_limbo)
     velocity = discover_velocity()
     floodgate = parse_floodgate(read_bytes(MAVEN + 'maven-metadata.xml'))
     with tempfile.TemporaryDirectory() as work:
         acquire_floodgate(floodgate, Path(work) / 'floodgate-api.jar')
-    require(commit == dev_commit(), 'dev-build changed during discovery; retry later')
-    require(new_limbo == limbo_state(commit, read_json(f'{GITHUB}/releases/tags/dev-build'),
-                                    old_limbo, hash_limbo_asset), 'Release changed during discovery')
+    require(new_limbo == discover_limbo(old_limbo), 'Release or tag changed during discovery; retry later')
     replacements = {}
     lines = ['Review Minecraft Network dependency updates before merging.', '']
     if changed(old_limbo, new_limbo):

@@ -13,6 +13,7 @@ USER_AGENT = 'Home-Server-Packages/1.0 (https://github.com/home-server-project/h
 GITHUB_HOSTS = {'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'}
 MAVEN = 'https://repo.opencollab.dev/main/org/geysermc/floodgate/api/2.2.5-SNAPSHOT/'
 MAX_JAR_SIZE = 128 * 1024 * 1024
+STABLE_LIMBO_TAG = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
 
 
 def require(condition, message):
@@ -29,13 +30,19 @@ def validate_pin(pin, kind):
     require(type(pin.get('size')) is int and 0 < pin['size'] <= MAX_JAR_SIZE, 'Invalid asset size')
     require(matches(r'[0-9a-f]{64}', pin.get('sha256')), 'Missing SHA-256')
     if kind == 'limboapi':
-        require(pin.get('repository') == 'Elytrium/LimboAPI' and pin.get('release_tag') == 'dev-build',
+        tag = pin.get('release_tag')
+        require(pin.get('repository') == 'Elytrium/LimboAPI' and
+                (tag == 'dev-build' or matches(STABLE_LIMBO_TAG, tag)),
                 'Unexpected LimboAPI upstream')
         require(matches(r'[0-9a-f]{40}', pin.get('source_commit')), 'Full source commit required')
         require(all(type(pin.get(k)) is int and pin[k] > 0 for k in ('release_id', 'asset_id')),
                 'Invalid GitHub release/asset identity')
         require(matches(r'limboapi-[0-9][A-Za-z0-9.+-]*\.jar', pin.get('filename')), 'Invalid LimboAPI filename')
         require(pin.get('version') == pin['filename'][9:-4], 'LimboAPI version mismatch')
+        if tag != 'dev-build':
+            require(pin['version'] == tag and pin['filename'] == f'limboapi-{tag}.jar',
+                    'LimboAPI stable tag/filename mismatch')
+        require(isinstance(pin.get('release_name'), str) and pin['release_name'], 'Missing release name')
         require(matches(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', pin.get('published_at')), 'Missing publication time')
         require(pin.get('url') == f"{GITHUB}/releases/assets/{pin['asset_id']}", 'Untrusted GitHub asset URL')
         require(pin.get('license') == 'AGPL-3.0-only', 'Unexpected LimboAPI license')

@@ -90,11 +90,15 @@ The runtime payload is `/artifacts/limboapi.jar` (LimboAPI) and
 and `/licenses/`. Velocity and Floodgate API are compile-only inputs for
 JustVoxel Lobby and are never included in the runtime payload.
 
-LimboAPI uses compatible `dev-build` tracking because normal 1.1.26 is too old
-for the current Minecraft 26.3 target. Its mutable tag is tracked by exact full
-source commit, release/asset identity, size and SHA-256 in
-`limboapi-update.json`. Changes arrive through review PRs, including the old and
-new full commits and a compatibility review note.
+The LimboAPI updater discovers the latest normal stable GitHub Release and
+resolves that release's exact tag to the exact full source commit. The historical
+`dev-build` pin remains supported only for migration. Proposed dependency state
+in `limboapi-update.json` remains exact and reviewable, including the release tag,
+full source commit, release/asset identity, filename, publication time, size,
+SHA-256, exact asset API URL, license and compatibility note. Builds never consume
+`latest`. Changes arrive through the existing updater PR workflow, including the
+old and new full commits. Compatibility still requires review when the source
+commit changes.
 
 Velocity uses only exact reviewed `VELOCITY_VERSION` + `VELOCITY_BUILD` in
 `package.env` (initially 4.3.1 build 45). The build queries the official PaperMC
