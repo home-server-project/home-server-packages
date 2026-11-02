@@ -17,6 +17,24 @@ import acquire
 import validate
 
 
+LEGACY_LIMBOAPI_PIN = {
+    'repository': 'Elytrium/LimboAPI',
+    'release_tag': 'dev-build',
+    'source_commit': 'bfef5799f21d73a80155035c3430f6654aa6b9f8',
+    'release_id': 390180560,
+    'release_name': 'Dev-build bfef579',
+    'asset_id': 568567016,
+    'filename': 'limboapi-1.1.27-SNAPSHOT.jar',
+    'version': '1.1.27-SNAPSHOT',
+    'published_at': '2026-09-16T18:44:41Z',
+    'size': 3339167,
+    'sha256': '5d541984b90ca7a88eb49ca5f8cc3a803f5ecdfa6d7ed30b605b72ff94156e40',
+    'url': 'https://api.github.com/repos/Elytrium/LimboAPI/releases/assets/568567016',
+    'compatibility': 'Minecraft 26.3 / Velocity protocol 777',
+    'license': 'AGPL-3.0-only',
+}
+
+
 def velocity(build=45, version='4.3.1', channel='STABLE'):
     digest = 'a' * 64
     name = f'velocity-{version}-{build}.jar'
@@ -27,22 +45,28 @@ def velocity(build=45, version='4.3.1', channel='STABLE'):
 
 class LimboTests(unittest.TestCase):
     def setUp(self):
-        self.old = u.load_pin(PACKAGE, 'limboapi')
-        p = self.old
+        self.old = dict(LEGACY_LIMBOAPI_PIN)
         self.commit = 'cd34c9c3b2951f040c840de00dd9215b37138655'
-        self.release = dict(id=p['release_id'] + 1, name='1.2.0', tag_name='1.2.0', draft=False,
-                            prerelease=False, published_at=p['published_at'],
-                            assets=[dict(id=p['asset_id'], name='limboapi-1.2.0.jar', size=3341235,
-                            url=p['url'], state='uploaded',
+        self.release = dict(id=430543977, name='Release 1.2.0', tag_name='1.2.0', draft=False,
+                            prerelease=False, published_at='2026-11-01T11:41:16Z',
+                            assets=[dict(id=698175322, name='limboapi-1.2.0.jar', size=3341235,
+                            url='https://api.github.com/repos/Elytrium/LimboAPI/releases/assets/698175322',
+                            state='uploaded',
                             digest='sha256:25582ebf5567fec1c20a03ad2c6e01fa05911a76749c67e7b0192acf508f7d31')])
 
     def test_legacy_pin_still_validates(self):
         self.assertEqual(self.old['release_tag'], 'dev-build')
         self.assertEqual(u.validate_pin(self.old, 'limboapi'), self.old)
 
+    def test_current_stable_pin_validates(self):
+        current = u.load_pin(PACKAGE, 'limboapi')
+        self.assertEqual(current['release_tag'], '1.2.0')
+        self.assertEqual(u.validate_pin(current, 'limboapi'), current)
+
     def test_stable_candidate_and_migration(self):
         candidate = update.limbo_state(self.commit, self.release, self.old)
         self.assertEqual(u.validate_pin(candidate, 'limboapi'), candidate)
+        self.assertEqual(candidate, u.load_pin(PACKAGE, 'limboapi'))
         self.assertEqual((candidate['release_tag'], candidate['source_commit'],
                           candidate['version'], candidate['filename']),
                          ('1.2.0', self.commit, '1.2.0', 'limboapi-1.2.0.jar'))
@@ -55,10 +79,11 @@ class LimboTests(unittest.TestCase):
                 u.validate_pin(pin, 'limboapi')
 
     def test_unchanged_full_commit(self):
-        candidate = update.limbo_state(self.old['source_commit'], self.release, self.old)
-        self.assertEqual(candidate['compatibility'], self.old['compatibility'])
-        self.assertFalse(update.changed(candidate,
-            update.limbo_state(candidate['source_commit'], self.release, candidate)))
+        current = u.load_pin(PACKAGE, 'limboapi')
+        candidate = update.limbo_state(current['source_commit'], self.release, current)
+        self.assertEqual(candidate, current)
+        self.assertEqual(candidate['compatibility'], current['compatibility'])
+        self.assertFalse(update.changed(current, candidate))
 
     def test_changed_commit_even_with_same_short_prefix(self):
         commit = self.old['source_commit'][:7] + 'a' * 33
@@ -351,6 +376,7 @@ class UpdaterWritesTests(unittest.TestCase):
             with self.subTest(race=race), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)/'package'
                 shutil.copytree(PACKAGE, root)
+                (root/'limboapi-update.json').write_text(json.dumps(self.old))
                 before = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
                 summary = Path(directory)/'summary.md'
                 args = ['update.py', '--directory', str(root), '--summary', str(summary)]
@@ -395,7 +421,6 @@ class UpdaterWritesTests(unittest.TestCase):
             root = Path(directory)
             for name in ('package.env', 'limboapi-update.json'):
                 shutil.copyfile(PACKAGE/name, root/name)
-            (root/'limboapi-update.json').write_text(json.dumps(self.stable))
             before = {p.name: p.read_bytes() for p in root.iterdir()}
             args = ['update.py', '--directory', str(root), '--summary', str(root/'summary.md')]
             with patch.object(sys, 'argv', args), \
@@ -412,7 +437,6 @@ class UpdaterWritesTests(unittest.TestCase):
             root = Path(directory)
             for name in ('package.env', 'limboapi-update.json'):
                 shutil.copyfile(PACKAGE/name, root/name)
-            (root/'limboapi-update.json').write_text(json.dumps(self.stable))
             limbo_before = (root/'limboapi-update.json').read_bytes()
             before = u.load_env(root)
             args = ['update.py', '--directory', str(root), '--summary', str(root/'summary.md')]
