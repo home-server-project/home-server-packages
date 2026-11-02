@@ -25,16 +25,15 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.MINECRAFT_NETWORK_UPDATE_TOKEN }}
       - name: Test updater
         run: python3 -B -m unittest discover -s packages/minecraft-network-plugins/tests -v
       - name: Discover reviewed dependency updates
         env:
-          GH_TOKEN: ${{ secrets.MINECRAFT_NETWORK_UPDATE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 -B packages/minecraft-network-plugins/update.py --summary "${RUNNER_TEMP}/minecraft-network-update.md"
       - name: Open or update dependency PR
         env:
-          GH_TOKEN: ${{ secrets.MINECRAFT_NETWORK_UPDATE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           state=(packages/minecraft-network-plugins/limboapi-update.json packages/minecraft-network-plugins/package.env)

@@ -108,13 +108,16 @@ SHA-256 sidecar and used only for compilation.
 The scheduled or manually dispatched package updater proposes all three inputs
 on a dedicated branch through a PR to `main`. Unchanged inputs produce no PR.
 The updater never publishes. Package builds never choose newer versions.
-The updater requires the `MINECRAFT_NETWORK_UPDATE_TOKEN` repository secret
-(a bot token with repository contents and pull request write access), so its
-PRs trigger the build workflow. It writes only the two package state files;
+The updater uses the built-in `GITHUB_TOKEN`, with only `contents: write` and
+`pull-requests: write` granted to the job. The token is repository-scoped and
+lasts only for the job; no persistent updater credential is stored.
+CI for updater-created or updated PRs may require a repository user with write
+access to click "Approve workflows to run". It writes only the two package state files;
 its branch is `automation/minecraft-network-plugins`.
 Java 25 builds run the lobby's Gradle tests using a checksum-verified Gradle
 distribution. PRs build and validate the exact uploaded payload without publishing.
-Successful main-branch build and validation publish
+Package publishing happens only after the normal reviewed PR is merged to
+`main` and the normal main build and validation succeed, publishing
 `ghcr.io/home-server-project/minecraft-network-plugins:stable` and an immutable
 composition tag. Published checksums, plugin identities and dependency
 non-bundling are also checked by scheduled stable validation.
