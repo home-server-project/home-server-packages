@@ -62,6 +62,7 @@ jobs:
             tar \
             gzip \
             file \
+            openssl \
             uv
           dnf clean all
 
@@ -150,6 +151,7 @@ jobs:
           test -f /usr/share/licenses/virtui-manager/LICENSE
           test -f /usr/share/licenses/virtui-manager/python/manifest.tsv
           test -d /usr/libexec/virtui-manager/python
+          command -v openssl >/dev/null
 
           PYTHONPATH=/usr/libexec/virtui-manager/python \
           EXPECTED_VIRTUI="${VERSION}" \
