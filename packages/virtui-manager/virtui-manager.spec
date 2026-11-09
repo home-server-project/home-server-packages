@@ -19,6 +19,7 @@ Requires:       python3-requests
 Requires:       python3-netifaces
 Requires:       python3-gobject
 Requires:       python3-packaging
+Requires:       openssl
 Requires:       libosinfo
 Requires:       osinfo-db
 Requires:       tmux
