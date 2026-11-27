@@ -7,8 +7,6 @@ OUT_DIR="${ROOT_DIR}/out/superfile"
 SRC_DIR="${ROOT_DIR}/.work/superfile"
 RPMBUILD_DIR="${ROOT_DIR}/.work/rpmbuild-superfile"
 PAYLOAD_DIR="${ROOT_DIR}/.work/superfile-payload"
-PATCH_FILE="${PKG_DIR}/patches/0001-backport-linux-cross-filesystem-trash-fix.patch"
-PATCH_UPSTREAM_COMMIT="200a0b134574924e1c386996e1aba523a6992ab8"
 
 source "${PKG_DIR}/package.env"
 
@@ -39,36 +37,41 @@ test -f NOTICE.md
 test -f README.md
 test -f go.mod
 test -f go.sum
-test -f "${PATCH_FILE}"
-
-# Backport upstream fix for Linux trash operations across filesystems.
-# Once a future release already contains this change, this patch must be removed
-# rather than silently skipped.
-git apply --check "${PATCH_FILE}"
-git apply "${PATCH_FILE}"
 
 export GOTOOLCHAIN=auto
 
 go env GOVERSION > "${OUT_DIR}/metadata/go-version.txt"
 go mod verify
 
-# Run every normal test strictly. TestZoxide is isolated because upstream
-# documents a zoxide query/add race that can intermittently lose an update.
-go test ./... -skip '^TestZoxide$'
+# Keep Go test fixtures and the XDG home trash on the same filesystem.
+# GitHub job containers bind-mount HOME separately from /tmp.
+(
+    TEST_ENV="$(mktemp -d /tmp/superfile-tests.XXXXXX)"
+    trap 'rm -rf -- "${TEST_ENV}"' EXIT
 
-zoxide_ok=0
-for attempt in 1 2 3 4 5; do
-    echo "Running known-flaky TestZoxide, attempt ${attempt}/5"
-    if go test ./src/internal -run '^TestZoxide$' -count=1; then
-        zoxide_ok=1
-        break
+    export TMPDIR="${TEST_ENV}/tmp"
+    export XDG_DATA_HOME="${TEST_ENV}/data"
+    mkdir -p "${TMPDIR}" "${XDG_DATA_HOME}"
+    stat -c 'Device=%d Path=%n' "${TMPDIR}" "${XDG_DATA_HOME}"
+
+    # Run every normal test strictly. TestZoxide is isolated because upstream
+    # documents a zoxide query/add race that can intermittently lose an update.
+    go test ./... -skip '^TestZoxide$'
+
+    zoxide_ok=0
+    for attempt in 1 2 3 4 5; do
+        echo "Running known-flaky TestZoxide, attempt ${attempt}/5"
+        if go test ./src/internal -run '^TestZoxide$' -count=1; then
+            zoxide_ok=1
+            break
+        fi
+    done
+
+    if [[ "${zoxide_ok}" -ne 1 ]]; then
+        echo "ERROR: TestZoxide failed all 5 attempts" >&2
+        exit 1
     fi
-done
-
-if [[ "${zoxide_ok}" -ne 1 ]]; then
-    echo "ERROR: TestZoxide failed all 5 attempts" >&2
-    exit 1
-fi
+)
 
 # Use upstream's Linux build path. It builds with CGO_ENABLED=0.
 bash ./build.sh
@@ -105,14 +108,11 @@ find "${RPMBUILD_DIR}/RPMS" -type f -name 'superfile-*.x86_64.rpm' \
     -exec cp -v {} "${OUT_DIR}/rpms/" \;
 test -n "$(find "${OUT_DIR}/rpms" -maxdepth 1 -type f -name 'superfile-*.x86_64.rpm' -print -quit)"
 
-# Retain the exact upstream source, our packaging recipe, and the applied
-# upstream backport with the binary artifact.
+# Retain the exact upstream source and our packaging recipe with the binary artifact.
 git archive --format=tar.gz --prefix="superfile-${SUPERFILE_VERSION}/" \
     -o "${OUT_DIR}/source/superfile-${SUPERFILE_VERSION}-${SUPERFILE_COMMIT}.tar.gz" \
     "${SUPERFILE_COMMIT}"
 cp "${PKG_DIR}/superfile.spec" "${OUT_DIR}/source/superfile.spec"
-install -Dm0644 "${PATCH_FILE}" \
-    "${OUT_DIR}/source/0001-backport-linux-cross-filesystem-trash-fix.patch"
 
 install -Dm0644 LICENSE "${OUT_DIR}/licenses/LICENSE"
 install -Dm0644 NOTICE.md "${OUT_DIR}/licenses/NOTICE.md"
@@ -124,8 +124,6 @@ UPSTREAM_COMMIT=${SUPERFILE_COMMIT}
 LICENSE=${SUPERFILE_LICENSE}
 UPSTREAM=${SUPERFILE_UPSTREAM}
 PACKAGE_CHANNEL=universal-x86_64
-BACKPORT_1_UPSTREAM_COMMIT=${PATCH_UPSTREAM_COMMIT}
-BACKPORT_1_FILE=0001-backport-linux-cross-filesystem-trash-fix.patch
 EOF
 
 (
@@ -147,5 +145,5 @@ grep -q '/usr/share/licenses/superfile/NOTICE.md$' "${OUT_DIR}/metadata/rpm-file
 grep -q '/usr/share/doc/superfile/README.md$' "${OUT_DIR}/metadata/rpm-files.txt"
 grep -q '^License *: MIT$' "${OUT_DIR}/metadata/rpm-info.txt"
 
-printf 'Built Superfile %s RPM from %s with upstream backport %s\n' \
-    "${SUPERFILE_VERSION}" "${SUPERFILE_COMMIT}" "${PATCH_UPSTREAM_COMMIT}"
+printf 'Built Superfile %s RPM from %s\n' \
+    "${SUPERFILE_VERSION}" "${SUPERFILE_COMMIT}"
